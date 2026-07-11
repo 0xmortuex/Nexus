@@ -8,6 +8,7 @@ namespace Nexus.Core.Persistence;
     UseStringEnumConverter = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(List<ProcessRule>))]
+[JsonSerializable(typeof(AppSettings))]
 public sealed partial class NexusJsonContext : JsonSerializerContext
 {
 }

@@ -93,4 +93,37 @@ internal static partial class NativeMethods
     [DllImport("ntdll.dll")]
     internal static extern int NtSetInformationProcess(SafeProcessHandle process, int informationClass,
         ref int information, int informationLength);
+
+    // ---- System sampling ----
+    internal const int SystemProcessInformationClass = 5;
+    internal const int SystemProcessorPerformanceInformationClass = 8;
+    internal const int STATUS_INFO_LENGTH_MISMATCH = unchecked((int)0xC0000004);
+
+    [DllImport("ntdll.dll")]
+    internal static extern int NtQuerySystemInformation(int informationClass, byte[] information,
+        uint informationLength, out uint returnLength);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MEMORYSTATUSEX
+    {
+        public uint Length;
+        public uint MemoryLoad;
+        public ulong TotalPhys;
+        public ulong AvailPhys;
+        public ulong TotalPageFile;
+        public ulong AvailPageFile;
+        public ulong TotalVirtual;
+        public ulong AvailVirtual;
+        public ulong AvailExtendedVirtual;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX buffer);
+
+    // ---- Foreground window ----
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 }
