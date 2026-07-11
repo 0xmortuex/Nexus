@@ -109,3 +109,28 @@ Not testable off-Windows (deferred to the manual checklist):
   with EcoQoS, power plan switch, wuauserv stop/start, and full revert on exit.
 - Crash recovery on a real machine: kill Nexus mid-game-mode, relaunch, verify
   every change is rolled back.
+
+## Stage 5 — Tweaks, debloat, cleaner, startup manager
+
+`dotnet build`: clean, 0 warnings. `dotnet test`: 73/73 passed (13 new).
+
+Covered by automated tests:
+- Catalog integrity ("no decorative toggles" enforced by test): every tweak has a
+  non-empty description, at least one registry op or command, undo args on every
+  command, rooted HKEY_ paths, known value kinds, unique IDs; per-adapter tweaks
+  carry the {adapter} placeholder; descriptions must not contain hype words.
+- Cleaner path safety: deletion allowed only strictly under target roots —
+  `..` traversal, same-prefix sibling dirs (C:\Temp2 vs C:\Temp), and the root
+  itself are all rejected; thumbnail target is pattern-scoped to thumbcache_*.db.
+- Tweak state store: applied tweaks persist with captured originals (including
+  Existed=false), re-apply replaces instead of duplicating, first service-start
+  original wins (SysMain toggled twice still restores the true value), disabled
+  scheduled tasks dedupe case-insensitively and round-trip.
+
+Not testable off-Windows (deferred to the manual checklist):
+- Actual registry writes/captures/restores (verify a tweak → undo → regedit diff).
+- reg.exe export backups, System Restore point creation (and its 24 h throttle
+  warning path), powercfg /hibernate off|on.
+- Service stop + start-type changes, schtasks disable/enable, Remove-AppxPackage.
+- StartupApproved byte format interop with Task Manager's Startup page.
+- Real cache sizes/deletions with in-use file skipping.
