@@ -126,4 +126,24 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    // ---- Idle detection ----
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LASTINPUTINFO
+    {
+        public uint Size;
+        public uint Time; // tick count of last input
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+
+    // ---- Keep awake ----
+    internal const uint ES_CONTINUOUS = 0x80000000;
+    internal const uint ES_SYSTEM_REQUIRED = 0x00000001;
+    internal const uint ES_DISPLAY_REQUIRED = 0x00000002;
+
+    /// <summary>The state is per-thread: call from a long-lived dedicated thread only.</summary>
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern uint SetThreadExecutionState(uint flags);
 }

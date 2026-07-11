@@ -59,3 +59,30 @@ Not testable off-Windows (deferred to the manual checklist):
   image-name pointer translation in the pinned buffer) — verify against Task
   Manager on the first Windows run.
 - `GetForegroundWindow` PID resolution; actual priority save/restore round-trip.
+
+## Stage 3 — Process Lasso parity features
+
+`dotnet build`: clean, 0 warnings. `dotnet test`: 46/46 passed (18 new).
+
+Covered by automated tests:
+- Instance limits: newest instances selected for kill (start-time then PID
+  ordering), case-insensitive matching, under-limit/disabled/zero-limit no-ops.
+- Watchdog: fires only after the full sustained breach; dropping below the
+  threshold resets the clock; per-(rule, pid) cooldown blocks immediate
+  retriggers; CPU and RAM thresholds are OR-ed (RAM breach fires even with idle
+  CPU).
+- IdleSaver state machine: enters Power Saver exactly once at the idle threshold,
+  restores exactly once on input, suppression (game mode) both blocks entry and
+  forces exit, disabling while active exits cleanly.
+- SmartTrim: selects only background processes over the RAM threshold (foreground,
+  exempt, and system pseudo-PIDs skipped), honors the pass interval and the
+  per-process cooldown, disabled = selects nothing.
+- powercfg output parsing: GUID extraction from `/duplicatescheme` and localized
+  (French) `/getactivescheme` output, `/list` scheme enumeration, no-GUID → null.
+
+Not testable off-Windows (deferred to the manual checklist):
+- powercfg execution itself (plan cloning, CPMINCORES write, plan switching).
+- `GetLastInputInfo` idle math on a live session (including tick wraparound).
+- `SetThreadExecutionState` behavior (verify the PC doesn't sleep with Keep Awake
+  on; the flag is asserted from a dedicated thread and re-asserted hourly).
+- Kill/restart of real processes and access-denied handling for elevated targets.
