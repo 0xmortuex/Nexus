@@ -31,6 +31,32 @@
                                    Text="Blue bars are P-cores/standard cores, green bars are E-cores."/>
                     </StackPanel>
                     <StackPanel Grid.Column="1">
+                        <GroupBox Header="Suggested optimizations"
+                                  DataContext="{Binding DataContext.Suggestions, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <Button DockPanel.Dock="Right" Content="Re-scan" Command="{Binding RefreshCommand}"/>
+                                    <TextBlock Text="{Binding Status}" Style="{StaticResource DimText}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <ItemsControl ItemsSource="{Binding Suggestions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Width="70" VerticalAlignment="Top"
+                                                            Content="{Binding ActionText}" Command="{Binding ApplyCommand}"
+                                                            Visibility="{Binding Actionable, Converter={StaticResource BoolToVisibility}}"/>
+                                                    <StackPanel Margin="0,0,10,0">
+                                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                                        <TextBlock Text="{Binding Reason}" Style="{StaticResource DimText}"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </GroupBox>
                         <GroupBox Header="System">
                             <StackPanel>
                                 <TextBlock Text="{Binding TopologyText}"/>

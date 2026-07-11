@@ -63,6 +63,7 @@ conscious decision not to build it, with the reason.
 | Startup manager | ✅ | `StartupManagerService` |
 | System Restore point before changes | ✅ | `BackupService`, + mandatory .reg export |
 | One-click revert / restore defaults | ✅ | `RestoreDefaultsService` |
+| **Suggested optimizations (home-screen recommendations)** | ✅ | `SuggestionEngine` + `SuggestionService`, on the Dashboard |
 | **In-game FPS / latency overlay** | ❌ (won't) | needs DirectX/Vulkan present-hooking (RTSS-style); injecting into game processes is exactly what anti-cheat bans for. Out of scope by design. |
 | **Hardware monitoring (temps, GPU clocks, fan)** | ❌ (won't) | requires a kernel driver (WinRing0/inpout32 class). Those drivers are on Microsoft's vulnerable-driver blocklist and are a security liability. Use HWiNFO. |
 | **"AI" auto-tuning / cloud profiles** | ❌ (won't) | marketing layer over the same registry writes Nexus already exposes transparently. |

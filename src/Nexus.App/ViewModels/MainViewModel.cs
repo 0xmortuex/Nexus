@@ -3,6 +3,7 @@ namespace Nexus.App.ViewModels;
 public sealed class MainViewModel : ViewModelBase
 {
     public required DashboardViewModel Dashboard { get; init; }
+    public required SuggestionsViewModel Suggestions { get; init; }
     public required ProcessesViewModel Processes { get; init; }
     public required GameModeViewModel GameMode { get; init; }
     public required TweaksViewModel Tweaks { get; init; }

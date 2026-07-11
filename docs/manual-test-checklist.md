@@ -76,6 +76,19 @@ items marked **[hybrid]** need a P/E-core CPU (Intel 12th gen+), items marked
 - [ ] New tweaks apply/undo cleanly: Windows Game Mode, fullscreen-optimizations off,
       power-throttling off (PowerThrottlingOff=1), Sticky Keys off (Flags=506).
 
+## 3c. Suggested optimizations (Hone-style recommendations)
+- [ ] Dashboard → "Suggested optimizations" lists items derived from real state
+      (e.g. if GameDVR is on, it suggests turning it off; if DiagTrack runs, suggests disabling).
+- [ ] On a fresh machine the list is non-empty; each item shows a plain-language reason.
+- [ ] Click Apply on a tweak suggestion → the tweak applies (check the Tweaks tab shows it
+      as applied) and the item drops off the suggestion list on re-scan.
+- [ ] Apply a "Disable DiagTrack" suggestion → service disabled; item disappears.
+- [ ] Enable-feature suggestions (ProBalance/Game Mode/perf plan) flip the corresponding setting.
+- [ ] The hybrid-CPU hint appears only on a P/E-core CPU with no game profiles, and has no
+      Apply button (guidance only).
+- [ ] After applying everything, the panel shows "Your system already matches Nexus's recommendations."
+- [ ] Everything applied via suggestions is still reversible from its normal tab / Restore All.
+
 ## 4. Game Mode
 - [ ] Launch any fullscreen/borderless game (or a fullscreen video player NOT on the
       denylist to test detection logic) → Game Mode activates: log shows priority High,

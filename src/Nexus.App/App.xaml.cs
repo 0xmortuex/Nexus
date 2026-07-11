@@ -80,6 +80,7 @@ public partial class App : System.Windows.Application
         var cleaner = new CleanerService(log);
         var startup = new StartupManagerService(log);
         var autostart = new AutostartService(log);
+        var suggestions = new SuggestionService(tweaks, debloat, settings, games, power, topology, log);
         var restoreDefaults = new RestoreDefaultsService(
             tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns, log);
 
@@ -107,6 +108,7 @@ public partial class App : System.Windows.Application
         var mainViewModel = new MainViewModel
         {
             Dashboard = new DashboardViewModel(proBalance, rules, topology),
+            Suggestions = new SuggestionsViewModel(suggestions),
             Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, limiter, log),
             GameMode = new GameModeViewModel(gameMode, games, settings),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
