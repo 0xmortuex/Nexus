@@ -13,6 +13,7 @@ namespace Nexus.Core.Persistence;
 [JsonSerializable(typeof(List<GameProfile>))]
 [JsonSerializable(typeof(IntendedState))]
 [JsonSerializable(typeof(Tweaks.TweaksState))]
+[JsonSerializable(typeof(DnsBackupState))]
 public sealed partial class NexusJsonContext : JsonSerializerContext
 {
 }

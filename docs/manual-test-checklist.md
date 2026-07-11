@@ -56,6 +56,26 @@ items marked **[hybrid]** need a P/E-core CPU (Intel 12th gen+), items marked
 - [ ] Keep Awake on → `powercfg /requests` lists Nexus under SYSTEM/DISPLAY; machine
       does not sleep past its timeout. Off → request disappears.
 
+## 3b. Parity features (Lasso Pro + Hone premium)
+- [ ] CPU Limiter: right-click a CPU burner → Limit CPU to 25% → its CPU% in the list
+      and Task Manager settles near 25 % across all cores; Remove CPU limit → returns to full.
+- [ ] CPU limit via rule: set `CpuLimitPct` in a rule → relaunch the exe → capped on start.
+- [ ] Foreground boosting (Settings → General): enable → click between two Normal-priority
+      apps → the focused one shows AboveNormal in Task Manager, the other returns to Normal.
+      A process you manually set to High is NOT downgraded.
+- [ ] Keep-awake-while-running rule: mark a rule → launch it → `powercfg /requests` lists
+      Nexus; close it → request clears.
+- [ ] Auto-restart rule: mark "restart if exited" → kill the process yourself → it relaunches.
+      Kill it via Nexus (disallowed/instance/watchdog) → it does NOT relaunch. Kill it 4×
+      quickly → backoff message after the 3rd, no more relaunches for 5 min.
+- [ ] Standby purge (Memory & Network tab): note "Cached" in Task Manager → Purge → Cached drops.
+- [ ] Auto-purge: enable with a high threshold → when free RAM dips below it, log shows an auto-purge.
+- [ ] DNS benchmark: click Benchmark → resolvers listed by latency (or "no ICMP reply" on
+      ICMP-blocked networks); "Use" on one → `ipconfig /all` shows it on every adapter;
+      Restore previous DNS → back to the original (DHCP or prior static).
+- [ ] New tweaks apply/undo cleanly: Windows Game Mode, fullscreen-optimizations off,
+      power-throttling off (PowerThrottlingOff=1), Sticky Keys off (Flags=506).
+
 ## 4. Game Mode
 - [ ] Launch any fullscreen/borderless game (or a fullscreen video player NOT on the
       denylist to test detection logic) → Game Mode activates: log shows priority High,

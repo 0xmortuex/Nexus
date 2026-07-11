@@ -99,5 +99,43 @@ public class PersistenceTests : IDisposable
         Assert.Null(new RulesRepository(NewStore()).Find("a.exe"));
     }
 
+    [Fact]
+    public void Rule_round_trips_new_lifecycle_fields()
+    {
+        var store = NewStore();
+        var rule = new ProcessRule
+        {
+            ExeName = "svc.exe",
+            CpuLimitPct = 25,
+            KeepAwakeWhileRunning = true,
+            RestartIfExited = true,
+        };
+
+        store.Save([rule]);
+        var loaded = Assert.Single(NewStore().Load());
+
+        Assert.Equal(25, loaded.CpuLimitPct);
+        Assert.True(loaded.KeepAwakeWhileRunning);
+        Assert.True(loaded.RestartIfExited);
+    }
+
+    [Fact]
+    public void Dns_backup_state_round_trips_and_reports_applied()
+    {
+        var store = new JsonStore<DnsBackupState>(
+            Path.Combine(_dir, "dns.json"), NexusJsonContext.Default.DnsBackupState, static () => new DnsBackupState());
+
+        Assert.False(store.Load().Applied);
+
+        store.Save(new DnsBackupState
+        {
+            Adapters = [new AdapterDnsBackup("{guid}", "Ethernet", "192.168.1.1,192.168.1.2")],
+        });
+
+        var loaded = store.Load();
+        Assert.True(loaded.Applied);
+        Assert.Equal("192.168.1.1,192.168.1.2", Assert.Single(loaded.Adapters).OriginalNameServer);
+    }
+
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 }

@@ -170,3 +170,30 @@ SmartTrim additionally use the restraint-exempt list (shell, audio, self).
 Final verification on Windows: `docs/manual-test-checklist.md` (7 sections,
 covers every feature including the Game Mode crash test and anti-cheat
 never-touch verification).
+
+## Parity pass — Lasso Pro + Hone premium gap closure
+
+`dotnet build`: clean. `dotnet test`: 75/75 (2 new persistence cases).
+Single-file publish re-verified (66 MB).
+
+Added to close remaining gaps (see `docs/parity-matrix.md` for the full accounting):
+- **CPU Limiter** (Lasso Pro) — `CpuLimiterService`, hard % cap via Job Object CPU
+  rate control; wired to the Processes context menu and to `ProcessRule.CpuLimitPct`.
+- **Foreground boosting** (Lasso) — `ForegroundBoostService`, raises the focused
+  app to AboveNormal and restores on blur; only touches Normal-priority processes.
+- **Keep-awake-while-running + auto-restart** (Lasso Pro) — `RuleLifecycleService`
+  with a `KillTracker` so Nexus-initiated kills never trigger a restart, plus a
+  3-restarts-per-5-min crash-loop backoff.
+- **Standby-list purge** (Hone/ISLC) — `StandbyListService` via
+  `NtSetSystemInformation` + SeProfileSingleProcessPrivilege; manual + auto-below-threshold.
+- **DNS benchmark & switch** (Hone premium) — `DnsService`, ICMP-timed public
+  resolvers, per-adapter apply with captured-original undo (DHCP vs static).
+- Four gaming tweaks: Windows Game Mode, fullscreen-optimizations off,
+  global power-throttling off, Sticky Keys shortcut off.
+
+Automated coverage for the new work is limited to what's pure (rule field
+round-trip, DNS backup-state round-trip); the Job Object cap, standby purge,
+foreground boost timing, and netsh DNS changes are interop and are in the manual
+checklist. Deliberately NOT built (documented in the parity matrix): in-game FPS
+overlay (anti-cheat hazard), hardware temperature monitoring (needs a
+blocklisted kernel driver), "AI" auto-tuning (wrapper over existing tweaks).

@@ -21,6 +21,7 @@ public sealed class RestoreDefaultsService
     private readonly GameProfileRepository _games;
     private readonly AutostartService _autostart;
     private readonly KeepAwakeService _keepAwake;
+    private readonly DnsService _dns;
     private readonly ActivityLog _log;
 
     public RestoreDefaultsService(
@@ -33,6 +34,7 @@ public sealed class RestoreDefaultsService
         GameProfileRepository games,
         AutostartService autostart,
         KeepAwakeService keepAwake,
+        DnsService dns,
         ActivityLog log)
     {
         _tweaks = tweaks;
@@ -44,6 +46,7 @@ public sealed class RestoreDefaultsService
         _games = games;
         _autostart = autostart;
         _keepAwake = keepAwake;
+        _dns = dns;
         _log = log;
     }
 
@@ -60,6 +63,9 @@ public sealed class RestoreDefaultsService
         _debloat.RestoreAll();
         _power.DeletePerformancePlan();
         _keepAwake.SetEnabled(false);
+
+        if (_dns.HasAppliedCustomDns && !_dns.Restore(out var dnsError) && dnsError is not null)
+            failures.Add($"DNS: {dnsError}");
 
         _rules.Clear();
         foreach (var game in _games.All().ToArray())

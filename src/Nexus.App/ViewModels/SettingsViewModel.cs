@@ -99,6 +99,12 @@ public sealed class SettingsViewModel : ViewModelBase
     }
 
     // ---- Misc ----
+    public bool ForegroundBoost
+    {
+        get => _settings.Current.ForegroundBoost;
+        set { _settings.Update(s => s with { ForegroundBoost = value }); OnPropertyChanged(); }
+    }
+
     public bool KeepAwake
     {
         get => _keepAwake.Enabled;

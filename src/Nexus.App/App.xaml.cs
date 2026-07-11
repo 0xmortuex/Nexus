@@ -54,15 +54,21 @@ public partial class App : System.Windows.Application
         var journal = new IntendedStateJournal(paths);
 
         var watcher = new FailoverProcessWatcher(log);
-        var ruleApplication = new RuleApplicationService(watcher, rules, api, topology, log);
+        var kills = new KillTracker();
+        var limiter = new CpuLimiterService(log);
+        var ruleApplication = new RuleApplicationService(watcher, rules, api, topology, limiter, log);
         var proBalance = new ProBalanceService(sampler, api, log, settings);
-        var enforcement = new EnforcementService(watcher, proBalance, api, log, settings);
+        var enforcement = new EnforcementService(watcher, proBalance, api, log, settings, kills);
         var power = new PowerPlanService(log, settings);
         var idleSaver = new IdleSaverService(power, log, settings);
         var smartTrim = new SmartTrimService(proBalance, api, log, settings);
         var keepAwake = new KeepAwakeService(log);
+        var standby = new StandbyListService(log, settings, proBalance);
         var foreground = new ForegroundMonitor();
         var gameMode = new GameModeService(foreground, proBalance, games, journal, api, topology, power, log, settings);
+        var foregroundBoost = new ForegroundBoostService(foreground, api, log, settings, gameMode);
+        var lifecycle = new RuleLifecycleService(watcher, rules, keepAwake, limiter, kills, log);
+        var dns = new DnsService(log, paths);
         var recovery = new CrashRecoveryService(journal, api, power, log);
         idleSaver.IsSuppressed = () => gameMode.IsActive;
 
@@ -75,10 +81,11 @@ public partial class App : System.Windows.Application
         var startup = new StartupManagerService(log);
         var autostart = new AutostartService(log);
         var restoreDefaults = new RestoreDefaultsService(
-            tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, log);
+            tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns, log);
 
         _disposables.AddRange([watcher, ruleApplication, proBalance, enforcement,
-            idleSaver, smartTrim, keepAwake, foreground, gameMode]);
+            idleSaver, smartTrim, keepAwake, standby, foreground, gameMode,
+            foregroundBoost, lifecycle, limiter]);
 
         // ---- Crash recovery BEFORE any engine starts mutating ----
         recovery.RecoverIfNeeded();
@@ -90,16 +97,20 @@ public partial class App : System.Windows.Application
         enforcement.Start();
         idleSaver.Start();
         smartTrim.Start();
+        standby.Start();
         foreground.Start();
         gameMode.Start();
+        foregroundBoost.Start();
+        lifecycle.Start();
 
         // ---- UI ----
         var mainViewModel = new MainViewModel
         {
             Dashboard = new DashboardViewModel(proBalance, rules, topology),
-            Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, log),
+            Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, limiter, log),
             GameMode = new GameModeViewModel(gameMode, games, settings),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
+            Tools = new ToolsViewModel(standby, dns, settings),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),
             RestoreDefaultsCommand = new RelayCommand(() =>

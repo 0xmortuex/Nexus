@@ -160,6 +160,47 @@ public static class TweakCatalog
             ],
         },
 
+        new TweakDefinition
+        {
+            Id = "windows-game-mode-on",
+            Name = "Windows Game Mode: ON",
+            Category = "Capture & overlays",
+            Description = "Lets Windows deprioritize background work while a game runs; usually neutral-to-slightly-positive on modern builds.",
+            RegistryOps = [new($@"{Hkcu}\SOFTWARE\Microsoft\GameBar", "AutoGameModeEnabled", "dword", "1")],
+        },
+        new TweakDefinition
+        {
+            Id = "fse-optimizations-off",
+            Name = "Disable fullscreen optimizations globally",
+            Category = "Capture & overlays",
+            Description = "Forces classic exclusive fullscreen behavior for legacy games; on current Windows 11 the optimized path is usually equal or better — test per game.",
+            RegistryOps =
+            [
+                new($@"{Hkcu}\System\GameConfigStore", "GameDVR_FSEBehaviorMode", "dword", "2"),
+                new($@"{Hkcu}\System\GameConfigStore", "GameDVR_HonorUserFSEBehaviorMode", "dword", "1"),
+                new($@"{Hkcu}\System\GameConfigStore", "GameDVR_DXGIHonorFSEWindowsCompatible", "dword", "1"),
+                new($@"{Hkcu}\System\GameConfigStore", "GameDVR_EFSEFeatureFlags", "dword", "0"),
+            ],
+        },
+
+        // ---- Gaming ----
+        new TweakDefinition
+        {
+            Id = "power-throttling-off",
+            Name = "Disable global CPU power throttling",
+            Category = "Gaming",
+            Description = "Stops Windows from EcoQoS-throttling processes it deems background, system-wide. Costs battery on laptops; use on desktops.",
+            RegistryOps = [new($@"{Hklm}\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", "dword", "1")],
+        },
+        new TweakDefinition
+        {
+            Id = "sticky-keys-off",
+            Name = "Disable Sticky Keys shortcut (5× Shift)",
+            Category = "Input",
+            Description = "Stops the Sticky Keys prompt from interrupting games when Shift is tapped repeatedly. Pure quality-of-life.",
+            RegistryOps = [new($@"{Hkcu}\Control Panel\Accessibility\StickyKeys", "Flags", "string", "506")],
+        },
+
         // ---- Power ----
         new TweakDefinition
         {

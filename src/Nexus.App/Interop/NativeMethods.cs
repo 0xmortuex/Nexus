@@ -170,6 +170,70 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
 
+    // ---- Job objects (CPU limiter) ----
+    internal const int JobObjectCpuRateControlInformation = 15;
+    internal const uint JOB_OBJECT_CPU_RATE_CONTROL_ENABLE = 0x1;
+    internal const uint JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP = 0x4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct JOBOBJECT_CPU_RATE_CONTROL_INFORMATION
+    {
+        public uint ControlFlags;
+        /// <summary>Portion of 10000 across all cores (e.g. 2500 = 25 %).</summary>
+        public uint CpuRate;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr CreateJobObjectW(IntPtr securityAttributes, string? name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool AssignProcessToJobObject(IntPtr job, SafeProcessHandle process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool SetInformationJobObject(IntPtr job, int informationClass,
+        ref JOBOBJECT_CPU_RATE_CONTROL_INFORMATION information, int length);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool CloseHandle(IntPtr handle);
+
+    // ---- Standby list purge ----
+    internal const int SystemMemoryListInformationClass = 80;
+    internal const int MemoryPurgeStandbyList = 4;
+    internal const uint SE_PRIVILEGE_ENABLED = 0x2;
+    internal const uint TOKEN_ADJUST_PRIVILEGES = 0x20;
+    internal const uint TOKEN_QUERY = 0x8;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LUID
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct TOKEN_PRIVILEGES
+    {
+        public uint PrivilegeCount;
+        public LUID Luid;
+        public uint Attributes;
+    }
+
+    [DllImport("ntdll.dll")]
+    internal static extern int NtSetSystemInformation(int informationClass, ref int information, int length);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    internal static extern bool OpenProcessToken(IntPtr process, uint desiredAccess, out IntPtr token);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    internal static extern bool LookupPrivilegeValueW(string? systemName, string name, out LUID luid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    internal static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll,
+        ref TOKEN_PRIVILEGES newState, uint bufferLength, IntPtr previousState, IntPtr returnLength);
+
+    [DllImport("kernel32.dll")]
+    internal static extern IntPtr GetCurrentProcess();
+
     // ---- Keep awake ----
     internal const uint ES_CONTINUOUS = 0x80000000;
     internal const uint ES_SYSTEM_REQUIRED = 0x00000001;

@@ -78,6 +78,16 @@ public sealed record ProcessRule
     /// <summary>Trim the working set once when the rule is applied.</summary>
     public bool TrimWorkingSetOnStart { get; init; }
 
+    /// <summary>Hard CPU cap (1–99 % of total CPU) enforced by a Job Object.</summary>
+    public int? CpuLimitPct { get; init; }
+
+    /// <summary>Block system/display sleep while any instance of this exe runs.</summary>
+    public bool KeepAwakeWhileRunning { get; init; }
+
+    /// <summary>Relaunch the exe if it exits (crash-loop guarded; skipped when Nexus
+    /// itself terminated it via disallowed/instance-limit/watchdog rules).</summary>
+    public bool RestartIfExited { get; init; }
+
     public string NormalizedName => Normalize(ExeName);
 
     public static string Normalize(string exeName)

@@ -17,6 +17,7 @@ public sealed class RuleApplicationService : IDisposable
     private readonly RulesRepository _rules;
     private readonly ProcessApi _api;
     private readonly CpuTopologyProvider _topologyProvider;
+    private readonly CpuLimiterService _limiter;
     private readonly ActivityLog _log;
 
     public RuleApplicationService(
@@ -24,12 +25,14 @@ public sealed class RuleApplicationService : IDisposable
         RulesRepository rules,
         ProcessApi api,
         CpuTopologyProvider topologyProvider,
+        CpuLimiterService limiter,
         ActivityLog log)
     {
         _watcher = watcher;
         _rules = rules;
         _api = api;
         _topologyProvider = topologyProvider;
+        _limiter = limiter;
         _log = log;
     }
 
@@ -94,6 +97,10 @@ public sealed class RuleApplicationService : IDisposable
         if (rule.TrimWorkingSetOnStart)
             Do(applied, "working set trimmed",
                 (out string? err) => _api.TryTrimWorkingSet(pid, exeName, out err));
+
+        if (rule.CpuLimitPct is { } limit)
+            Do(applied, $"CPU capped at {limit}%",
+                (out string? err) => _limiter.TryLimit(pid, exeName, limit, out err));
 
         if (applied.Count > 0)
             _log.Info("Rules", $"Applied rule to {exeName} (PID {pid}): {string.Join(", ", applied)}.");

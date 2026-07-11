@@ -20,6 +20,7 @@ public sealed class EnforcementService : IDisposable
     private readonly ProcessApi _api;
     private readonly ActivityLog _log;
     private readonly SettingsService _settings;
+    private readonly KillTracker _kills;
     private readonly WatchdogEngine _watchdog = new();
     private readonly Dictionary<int, RunningInstance> _running = new();
     private readonly object _gate = new();
@@ -29,13 +30,15 @@ public sealed class EnforcementService : IDisposable
         ProBalanceService snapshots,
         ProcessApi api,
         ActivityLog log,
-        SettingsService settings)
+        SettingsService settings,
+        KillTracker kills)
     {
         _watcher = watcher;
         _snapshots = snapshots;
         _api = api;
         _log = log;
         _settings = settings;
+        _kills = kills;
     }
 
     public void Start()
@@ -160,6 +163,7 @@ public sealed class EnforcementService : IDisposable
         try
         {
             string? path;
+            _kills.MarkKilled(trigger.Pid);
             using (var process = Process.GetProcessById(trigger.Pid))
             {
                 path = process.MainModule?.FileName;
@@ -196,6 +200,7 @@ public sealed class EnforcementService : IDisposable
 
         try
         {
+            _kills.MarkKilled(pid); // restart-if-exited rules must not resurrect this
             using var process = Process.GetProcessById(pid);
             process.Kill();
             return true;

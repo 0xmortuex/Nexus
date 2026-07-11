@@ -41,6 +41,7 @@ public sealed class ProcessesViewModel : ViewModelBase
     private readonly ProcessApi _api;
     private readonly RulesRepository _rules;
     private readonly RuleApplicationService _ruleApplication;
+    private readonly CpuLimiterService _limiter;
     private readonly ActivityLog _log;
 
     public ObservableCollection<ProcessRow> Processes { get; } = [];
@@ -72,18 +73,22 @@ public sealed class ProcessesViewModel : ViewModelBase
     public RelayCommand TrimCommand { get; }
     public RelayCommand KillCommand { get; }
     public RelayCommand RemoveRuleCommand { get; }
+    public RelayCommand LimitCpuCommand { get; }
+    public RelayCommand ClearCpuLimitCommand { get; }
 
     public ProcessesViewModel(
         ProBalanceService snapshots,
         ProcessApi api,
         RulesRepository rules,
         RuleApplicationService ruleApplication,
+        CpuLimiterService limiter,
         ActivityLog log)
     {
         _snapshots = snapshots;
         _api = api;
         _rules = rules;
         _ruleApplication = ruleApplication;
+        _limiter = limiter;
         _log = log;
 
         SetPriorityCommand = new RelayCommand(p => WithSelected(row => SetPriority(row, Parse<ProcessPriority>(p))));
@@ -102,6 +107,13 @@ public sealed class ProcessesViewModel : ViewModelBase
                 _log.Info("Rules", $"Removed the rule for {row.ExeName}.");
             Refresh();
         }));
+        LimitCpuCommand = new RelayCommand(p => WithSelected(row =>
+        {
+            if (int.TryParse(p as string, out var pct) && !_limiter.TryLimit(row.Pid, row.ExeName, pct, out var error))
+                Report(error);
+        }));
+        ClearCpuLimitCommand = new RelayCommand(() => WithSelected(row =>
+            _limiter.TryClearLimit(row.Pid, row.ExeName, out _)));
     }
 
     private static T Parse<T>(object? parameter) where T : struct, Enum

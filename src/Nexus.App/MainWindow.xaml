@@ -114,6 +114,13 @@
                             </MenuItem>
                             <MenuItem Header="Efficiency mode on" Command="{Binding SetEfficiencyCommand}" CommandParameter="on"/>
                             <MenuItem Header="Efficiency mode off" Command="{Binding SetEfficiencyCommand}" CommandParameter="off"/>
+                            <MenuItem Header="Limit CPU to…">
+                                <MenuItem Header="10%" Command="{Binding LimitCpuCommand}" CommandParameter="10"/>
+                                <MenuItem Header="25%" Command="{Binding LimitCpuCommand}" CommandParameter="25"/>
+                                <MenuItem Header="50%" Command="{Binding LimitCpuCommand}" CommandParameter="50"/>
+                                <MenuItem Header="75%" Command="{Binding LimitCpuCommand}" CommandParameter="75"/>
+                                <MenuItem Header="Remove CPU limit" Command="{Binding ClearCpuLimitCommand}"/>
+                            </MenuItem>
                             <Separator/>
                             <MenuItem Header="Trim working set" Command="{Binding TrimCommand}"/>
                             <MenuItem Header="Remove saved rule" Command="{Binding RemoveRuleCommand}"/>
@@ -331,6 +338,51 @@
             </ScrollViewer>
         </TabItem>
 
+        <!-- ================= Memory & Network ================= -->
+        <TabItem Header="Memory &amp; Network">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10" DataContext="{Binding Tools}" MaxWidth="760" HorizontalAlignment="Left">
+                    <GroupBox Header="Standby memory list">
+                        <StackPanel>
+                            <TextBlock Text="{Binding MemoryStatus}" Style="{StaticResource DimText}" Margin="0,0,0,8"/>
+                            <Button Content="Purge standby list now" Command="{Binding PurgeStandbyCommand}"
+                                    HorizontalAlignment="Left"/>
+                            <CheckBox Content="Auto-purge when free memory is low" IsChecked="{Binding AutoPurgeStandby}"
+                                      Margin="0,8,0,0"/>
+                            <DockPanel Margin="0,4,0,0">
+                                <TextBlock Text="Purge below free RAM (MB):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Text="{Binding FreeMemoryThresholdMb}" Width="70" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </GroupBox>
+                    <GroupBox Header="DNS benchmark &amp; switch (reversible)">
+                        <StackPanel>
+                            <TextBlock Text="{Binding DnsStatus}" Style="{StaticResource DimText}" Margin="0,0,0,8"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="Benchmark resolvers" Command="{Binding BenchmarkDnsCommand}" Margin="0,0,8,0"/>
+                                <Button Content="Restore previous DNS" Command="{Binding RestoreDnsCommand}"
+                                        IsEnabled="{Binding CanRestoreDns}"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding DnsResults}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,3">
+                                            <Button DockPanel.Dock="Right" Content="Use" Width="60"
+                                                    Command="{Binding DataContext.ApplyDnsCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <TextBlock Width="110" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Width="120" Text="{Binding Latency}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Servers}" Style="{StaticResource DimText}" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
         <!-- ================= Log ================= -->
         <TabItem Header="Log">
             <Grid Margin="10" DataContext="{Binding Log}">
@@ -412,6 +464,7 @@
                     </GroupBox>
                     <GroupBox Header="General">
                         <StackPanel>
+                            <CheckBox Content="Foreground boosting (raise the app you're using to AboveNormal)" IsChecked="{Binding ForegroundBoost}"/>
                             <CheckBox Content="Keep the PC awake (block sleep and display off)" IsChecked="{Binding KeepAwake}"/>
                             <CheckBox Content="Start with Windows (scheduled task, highest privileges)" IsChecked="{Binding StartWithWindows}"/>
                         </StackPanel>
