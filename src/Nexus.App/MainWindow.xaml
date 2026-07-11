@@ -1,7 +1,426 @@
 <Window x:Class="Nexus.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Nexus" Height="720" Width="1100">
-    <Grid>
-    </Grid>
+        xmlns:controls="clr-namespace:Nexus.App.Controls"
+        Title="Nexus Optimizer" Height="760" Width="1180"
+        Background="{StaticResource BgBrush}">
+    <TabControl x:Name="Tabs" Margin="8">
+
+        <!-- ================= Dashboard ================= -->
+        <TabItem Header="Dashboard">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <Grid Margin="10" DataContext="{Binding Dashboard}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Style="{StaticResource H1}">
+                            <Run Text="CPU "/><Run Text="{Binding CpuText, Mode=OneWay}"/>
+                        </TextBlock>
+                        <controls:SparklineControl Values="{Binding CpuHistory}" Height="120"
+                                                   Stroke="{StaticResource AccentBrush}"/>
+                        <TextBlock Style="{StaticResource H1}" Margin="0,16,0,8">
+                            <Run Text="RAM "/><Run Text="{Binding RamText, Mode=OneWay}"/>
+                        </TextBlock>
+                        <controls:SparklineControl Values="{Binding RamHistory}" Height="120"
+                                                   Stroke="{StaticResource AccentAltBrush}"/>
+                        <TextBlock Style="{StaticResource H1}" Margin="0,16,0,8" Text="Per-core load"/>
+                        <controls:CoreBarsControl Values="{Binding PerCore}" ECoreMask="{Binding ECoreMask}" Height="90"/>
+                        <TextBlock Style="{StaticResource DimText}" Margin="0,6,0,0"
+                                   Text="Blue bars are P-cores/standard cores, green bars are E-cores."/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <GroupBox Header="System">
+                            <StackPanel>
+                                <TextBlock Text="{Binding TopologyText}"/>
+                                <TextBlock Text="{Binding RulesText}" Margin="0,4,0,0"/>
+                                <CheckBox Content="ProBalance (dynamic restraint)"
+                                          IsChecked="{Binding ProBalanceEnabled}" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox Header="Currently restrained">
+                            <ListBox ItemsSource="{Binding Restrained}" MinHeight="120" BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock>
+                                            <Run Text="{Binding ExeName, Mode=OneWay}"/>
+                                            <Run Text="{Binding Pid, Mode=OneWay, StringFormat=' (PID {0})'}"
+                                                 Foreground="{StaticResource TextDimBrush}"/>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </GroupBox>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ================= Processes ================= -->
+        <TabItem Header="Processes">
+            <Grid Margin="10" DataContext="{Binding Processes}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                    <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}" Width="220"
+                             HorizontalAlignment="Left"/>
+                </DockPanel>
+                <ListView Grid.Row="1" ItemsSource="{Binding Processes}"
+                          SelectedItem="{Binding Selected}"
+                          VirtualizingPanel.IsVirtualizing="True">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Process" Width="260" DisplayMemberBinding="{Binding ExeName}"/>
+                            <GridViewColumn Header="PID" Width="70" DisplayMemberBinding="{Binding Pid}"/>
+                            <GridViewColumn Header="CPU %" Width="80" DisplayMemberBinding="{Binding Cpu}"/>
+                            <GridViewColumn Header="RAM (MB)" Width="100" DisplayMemberBinding="{Binding RamMb}"/>
+                            <GridViewColumn Header="Rule" Width="60" DisplayMemberBinding="{Binding HasRule}"/>
+                        </GridView>
+                    </ListView.View>
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Set priority (now)">
+                                <MenuItem Header="Idle" Command="{Binding SetPriorityCommand}" CommandParameter="Idle"/>
+                                <MenuItem Header="Below normal" Command="{Binding SetPriorityCommand}" CommandParameter="BelowNormal"/>
+                                <MenuItem Header="Normal" Command="{Binding SetPriorityCommand}" CommandParameter="Normal"/>
+                                <MenuItem Header="Above normal" Command="{Binding SetPriorityCommand}" CommandParameter="AboveNormal"/>
+                                <MenuItem Header="High" Command="{Binding SetPriorityCommand}" CommandParameter="High"/>
+                            </MenuItem>
+                            <MenuItem Header="Set priority (always)">
+                                <MenuItem Header="Idle" Command="{Binding SetPriorityAlwaysCommand}" CommandParameter="Idle"/>
+                                <MenuItem Header="Below normal" Command="{Binding SetPriorityAlwaysCommand}" CommandParameter="BelowNormal"/>
+                                <MenuItem Header="Normal" Command="{Binding SetPriorityAlwaysCommand}" CommandParameter="Normal"/>
+                                <MenuItem Header="Above normal" Command="{Binding SetPriorityAlwaysCommand}" CommandParameter="AboveNormal"/>
+                                <MenuItem Header="High" Command="{Binding SetPriorityAlwaysCommand}" CommandParameter="High"/>
+                            </MenuItem>
+                            <MenuItem Header="Restrict cores (now)">
+                                <MenuItem Header="P-cores only" Command="{Binding SetAffinityCommand}" CommandParameter="PCoresOnly"/>
+                                <MenuItem Header="E-cores only" Command="{Binding SetAffinityCommand}" CommandParameter="ECoresOnly"/>
+                                <MenuItem Header="Physical cores only" Command="{Binding SetAffinityCommand}" CommandParameter="PhysicalCoresOnly"/>
+                            </MenuItem>
+                            <MenuItem Header="Restrict cores (always)">
+                                <MenuItem Header="P-cores only" Command="{Binding SetAffinityAlwaysCommand}" CommandParameter="PCoresOnly"/>
+                                <MenuItem Header="E-cores only" Command="{Binding SetAffinityAlwaysCommand}" CommandParameter="ECoresOnly"/>
+                                <MenuItem Header="Physical cores only" Command="{Binding SetAffinityAlwaysCommand}" CommandParameter="PhysicalCoresOnly"/>
+                            </MenuItem>
+                            <MenuItem Header="IO priority (now)">
+                                <MenuItem Header="Very low" Command="{Binding SetIoPriorityCommand}" CommandParameter="VeryLow"/>
+                                <MenuItem Header="Low" Command="{Binding SetIoPriorityCommand}" CommandParameter="Low"/>
+                                <MenuItem Header="Normal" Command="{Binding SetIoPriorityCommand}" CommandParameter="Normal"/>
+                            </MenuItem>
+                            <MenuItem Header="Efficiency mode on" Command="{Binding SetEfficiencyCommand}" CommandParameter="on"/>
+                            <MenuItem Header="Efficiency mode off" Command="{Binding SetEfficiencyCommand}" CommandParameter="off"/>
+                            <Separator/>
+                            <MenuItem Header="Trim working set" Command="{Binding TrimCommand}"/>
+                            <MenuItem Header="Remove saved rule" Command="{Binding RemoveRuleCommand}"/>
+                            <Separator/>
+                            <MenuItem Header="Terminate…" Command="{Binding KillCommand}"/>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                </ListView>
+            </Grid>
+        </TabItem>
+
+        <!-- ================= Game Mode ================= -->
+        <TabItem Header="Game Mode">
+            <Grid Margin="10" DataContext="{Binding GameMode}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0">
+                    <TextBlock Style="{StaticResource H1}" Text="{Binding StatusText}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Content="Game Mode enabled" IsChecked="{Binding Enabled}" Margin="0,0,16,0"/>
+                        <CheckBox Content="Auto-detect fullscreen/borderless games" IsChecked="{Binding AutoDetect}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+                        <Button Content="Force Game Mode for current app" Command="{Binding ForceCommand}" Margin="0,0,8,0"/>
+                        <Button Content="End Game Mode" Command="{Binding EndCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+                <DockPanel Grid.Row="1" Margin="0,4,0,8">
+                    <TextBlock Text="Add game exe:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <Button DockPanel.Dock="Right" Content="Add" Command="{Binding AddGameCommand}" Margin="6,0,0,0"/>
+                    <TextBox Text="{Binding NewGameExe, UpdateSourceTrigger=PropertyChanged}"/>
+                </DockPanel>
+                <ListView Grid.Row="2" ItemsSource="{Binding Games}">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Game" Width="240" DisplayMemberBinding="{Binding ExeName}"/>
+                            <GridViewColumn Header="Enabled" Width="80">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Enabled}" HorizontalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Soft pinning (CPU sets)" Width="150">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding UseCpuSets}" HorizontalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Demote hogs" Width="100">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding DemoteBackgroundHogs}" HorizontalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Perf. power plan" Width="120">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding UsePerformancePowerPlan}" HorizontalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Pause Windows Update" Width="150">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding PauseWindowsUpdate}" HorizontalAlignment="Center"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="" Width="90">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Remove"
+                                                Command="{Binding DataContext.RemoveGameCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Grid>
+        </TabItem>
+
+        <!-- ================= Tweaks ================= -->
+        <TabItem Header="Tweaks — measure before trusting">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10" DataContext="{Binding Tweaks}">
+                    <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,10"
+                               Text="Every tweak backs up the registry keys it touches (plus a System Restore point once per session) and has a working Undo. The descriptions are honest — benchmark before and after instead of trusting labels."/>
+
+                    <GroupBox Header="System tweaks">
+                        <ItemsControl ItemsSource="{Binding Tweaks}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,4">
+                                        <Button DockPanel.Dock="Right" Width="70" Content="{Binding ButtonText}"
+                                                Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource DimText}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </GroupBox>
+
+                    <GroupBox Header="Debloat — services (disable only, reversible)">
+                        <ItemsControl ItemsSource="{Binding Services}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,4">
+                                        <Button DockPanel.Dock="Right" Width="80" Content="{Binding ButtonText}"
+                                                Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource DimText}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </GroupBox>
+
+                    <GroupBox Header="Debloat — telemetry scheduled tasks (disable only, reversible)">
+                        <ItemsControl ItemsSource="{Binding Tasks}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,4">
+                                        <Button DockPanel.Dock="Right" Width="80" Content="{Binding ButtonText}"
+                                                Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource DimText}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </GroupBox>
+
+                    <GroupBox Header="Debloat — preinstalled apps (removal is one-way; nothing is pre-checked)">
+                        <StackPanel>
+                            <ItemsControl ItemsSource="{Binding Apps}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Checked}">
+                                            <TextBlock>
+                                                <Run Text="{Binding Name, Mode=OneWay}"/>
+                                                <Run Text="{Binding PackageFamily, Mode=OneWay, StringFormat=' ({0})'}"
+                                                     Foreground="{StaticResource TextDimBrush}"/>
+                                            </TextBlock>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="Remove checked apps…" Command="{Binding RemoveCheckedAppsCommand}"
+                                    HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Cleaner — size preview, then confirm">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Button Content="Scan" Command="{Binding ScanCommand}" Margin="0,0,8,0"/>
+                                <Button Content="Clean checked…" Command="{Binding CleanCommand}" Margin="0,0,12,0"/>
+                                <TextBlock Text="{Binding CleanerStatus}" VerticalAlignment="Center"
+                                           Style="{StaticResource DimText}"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding CleanTargets}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Checked}">
+                                            <TextBlock>
+                                                <Run Text="{Binding Name, Mode=OneWay}"/>
+                                                <Run Text="{Binding SizeText, Mode=OneWay, StringFormat=' — {0}'}"
+                                                     Foreground="{StaticResource TextDimBrush}"/>
+                                            </TextBlock>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Startup manager (enable/disable only — nothing is deleted)">
+                        <StackPanel>
+                            <Button Content="Refresh" Command="{Binding RefreshStartupCommand}"
+                                    HorizontalAlignment="Left" Margin="0,0,0,6"/>
+                            <ListView ItemsSource="{Binding StartupEntries}" MaxHeight="320">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Enabled" Width="70">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding Enabled}" HorizontalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Name" Width="220" DisplayMemberBinding="{Binding Name}"/>
+                                        <GridViewColumn Header="Source" Width="140" DisplayMemberBinding="{Binding Source}"/>
+                                        <GridViewColumn Header="Command / path" Width="420" DisplayMemberBinding="{Binding Command}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ================= Log ================= -->
+        <TabItem Header="Log">
+            <Grid Margin="10" DataContext="{Binding Log}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                    <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}" Width="260"
+                             HorizontalAlignment="Left"/>
+                </DockPanel>
+                <ListView Grid.Row="1" ItemsSource="{Binding Entries}" VirtualizingPanel.IsVirtualizing="True">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Time" Width="150"
+                                            DisplayMemberBinding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}"/>
+                            <GridViewColumn Header="Level" Width="80" DisplayMemberBinding="{Binding Level}"/>
+                            <GridViewColumn Header="Category" Width="110" DisplayMemberBinding="{Binding Category}"/>
+                            <GridViewColumn Header="Message" Width="700" DisplayMemberBinding="{Binding Message}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Grid>
+        </TabItem>
+
+        <!-- ================= Settings ================= -->
+        <TabItem Header="Settings">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10" DataContext="{Binding Settings}" MaxWidth="640" HorizontalAlignment="Left">
+                    <GroupBox Header="ProBalance thresholds">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="320"/>
+                                <ColumnDefinition Width="100"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/><RowDefinition/><RowDefinition/>
+                                <RowDefinition/><RowDefinition/><RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Engage above total CPU %" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding LoadEnterPct}" Margin="0,2"/>
+                            <TextBlock Grid.Row="1" Text="Release below total CPU %" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding LoadExitPct}" Margin="0,2"/>
+                            <TextBlock Grid.Row="2" Text="Load must persist (ms)" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SustainMs}" Margin="0,2"/>
+                            <TextBlock Grid.Row="3" Text="Calm must persist (ms)" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ReleaseMs}" Margin="0,2"/>
+                            <TextBlock Grid.Row="4" Text="Minimum restraint time (ms)" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding MinRestraintMs}" Margin="0,2"/>
+                            <TextBlock Grid.Row="5" Text="Per-process CPU threshold %" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding ProcessCpuThresholdPct}" Margin="0,2"/>
+                        </Grid>
+                    </GroupBox>
+                    <GroupBox Header="ProBalance exclusions (comma-separated exe names)">
+                        <TextBox Text="{Binding ProBalanceExclusions}"/>
+                    </GroupBox>
+                    <GroupBox Header="IdleSaver">
+                        <StackPanel>
+                            <CheckBox Content="Switch to Power Saver when idle" IsChecked="{Binding IdleSaverEnabled}"/>
+                            <DockPanel>
+                                <TextBlock Text="Idle minutes:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Text="{Binding IdleMinutes}" Width="60" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </GroupBox>
+                    <GroupBox Header="SmartTrim">
+                        <StackPanel>
+                            <CheckBox Content="Periodically trim background working sets" IsChecked="{Binding SmartTrimEnabled}"/>
+                            <DockPanel>
+                                <TextBlock Text="Only processes above (MB):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Text="{Binding TrimThresholdMb}" Width="60" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                            <DockPanel Margin="0,4,0,0">
+                                <TextBlock Text="Every (minutes):" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Text="{Binding TrimIntervalMinutes}" Width="60" HorizontalAlignment="Left"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </GroupBox>
+                    <GroupBox Header="General">
+                        <StackPanel>
+                            <CheckBox Content="Keep the PC awake (block sleep and display off)" IsChecked="{Binding KeepAwake}"/>
+                            <CheckBox Content="Start with Windows (scheduled task, highest privileges)" IsChecked="{Binding StartWithWindows}"/>
+                        </StackPanel>
+                    </GroupBox>
+                    <Button Content="Restore ALL defaults (undo every tweak, rule and power change)…"
+                            Command="{Binding DataContext.RestoreDefaultsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            HorizontalAlignment="Left" Margin="0,10,0,20"/>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+    </TabControl>
 </Window>
