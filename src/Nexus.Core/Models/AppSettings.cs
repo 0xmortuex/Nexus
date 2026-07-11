@@ -11,6 +11,9 @@ public sealed record EnforcementOptions
     /// <summary>Exe names terminated the instant they launch. Confirmed by the user
     /// when added in the UI; the service enforces without further prompts.</summary>
     public IReadOnlyList<string> DisallowedProcesses { get; init; } = [];
+    /// <summary>Exe names whose running instances get their cores split evenly
+    /// between them (Instance Balancer).</summary>
+    public IReadOnlyList<string> BalancedProcesses { get; init; } = [];
 }
 
 public sealed record PowerOptions
@@ -43,4 +46,6 @@ public sealed record AppSettings
     public MemoryOptions Memory { get; init; } = new();
     /// <summary>Raise the foreground app to AboveNormal while it has focus.</summary>
     public bool ForegroundBoost { get; init; }
+    /// <summary>Hold the finest system timer resolution (NtSetTimerResolution).</summary>
+    public bool HighTimerResolution { get; init; }
 }

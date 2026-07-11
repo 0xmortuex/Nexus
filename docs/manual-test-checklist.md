@@ -89,6 +89,27 @@ items marked **[hybrid]** need a P/E-core CPU (Intel 12th gen+), items marked
 - [ ] After applying everything, the panel shows "Your system already matches Nexus's recommendations."
 - [ ] Everything applied via suggestions is still reversible from its normal tab / Restore All.
 
+## 3d. Latency & hardware (report mechanisms)
+- [ ] IFEO launch priority: Processes → right-click a game → Launch priority → High.
+      Regedit shows HKLM\...\Image File Execution Options\<exe>\PerfOptions\CpuPriorityClass=3.
+      Relaunch the game → it starts at High even under an anti-cheat that blocks live
+      SetPriorityClass. Remove launch priority → key gone.
+- [ ] Instance balancer: add an exe to BalancedProcesses, open 2+ copies → each copy's
+      affinity (Task Manager → Details → Set affinity) covers a distinct core range.
+- [ ] Timer resolution (Latency tab): enable → status shows ≈0.50 ms; `powercfg /energy`
+      or ClockRes confirms 0.5 ms. Disable → returns toward 15.6 ms when nothing else holds it.
+- [ ] Boot timers: Apply "let Windows use TSC" → `bcdedit` no longer lists useplatformclock;
+      Undo → useplatformclock Yes. Same for dynamictick/tscsyncpolicy. Reboot to feel effect.
+- [ ] Interrupt tuning: Scan devices → GPU/NIC/storage listed with MSI state. Toggle MSI on
+      a NIC → regedit MSISupported=1 under that device's Interrupt Management. Pin IRQ→CPU 2
+      → AssignmentSetOverride + DevicePolicy=4 written. Clear (empty box + Set) → values gone.
+      Verify after reboot with an MSI-utility / Resource Monitor that IRQ is negative (MSI).
+- [ ] NIC latency: Apply → Get-NetAdapterAdvancedProperty shows *InterruptModeration/
+      *FlowControl/*EEE = 0 on adapters that expose them; unsupported ones skipped, no crash.
+- [ ] New tweaks apply/undo: GPU preemption off (EnablePreemption=0), Prefetch/SuperFetch off,
+      SystemResponsiveness=0, Win32PrioritySeparation=0x2A, core-parking-unhide reveals the
+      slider in Power Options → Processor power management.
+
 ## 4. Game Mode
 - [ ] Launch any fullscreen/borderless game (or a fullscreen video player NOT on the
       denylist to test detection logic) → Game Mode activates: log shows priority High,

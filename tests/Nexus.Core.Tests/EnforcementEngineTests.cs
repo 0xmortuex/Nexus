@@ -52,6 +52,57 @@ public class InstanceLimitEngineTests
     }
 }
 
+public class InstanceBalancerEngineTests
+{
+    [Fact]
+    public void Splits_cores_evenly_between_two_instances()
+    {
+        // 8 logical CPUs (mask 0xFF), two instances → 4 cores each.
+        var result = InstanceBalancerEngine.Balance([200, 100], 0xFF);
+
+        Assert.Equal(2, result.Count);
+        // Deterministic PID order: 100 first.
+        Assert.Equal(100, result[0].Pid);
+        Assert.Equal(0x0Ful, result[0].AffinityMask); // cores 0-3
+        Assert.Equal(200, result[1].Pid);
+        Assert.Equal(0xF0ul, result[1].AffinityMask); // cores 4-7
+    }
+
+    [Fact]
+    public void Four_instances_on_four_cores_get_one_each()
+    {
+        var result = InstanceBalancerEngine.Balance([1, 2, 3, 4], 0xF);
+
+        Assert.Equal([0x1ul, 0x2ul, 0x4ul, 0x8ul], result.Select(r => r.AffinityMask));
+    }
+
+    [Fact]
+    public void Respects_a_sparse_core_mask()
+    {
+        // Only cores 1 and 3 usable (mask 0b1010); two instances → one each.
+        var result = InstanceBalancerEngine.Balance([10, 20], 0b1010);
+
+        Assert.Equal(0b0010ul, result[0].AffinityMask);
+        Assert.Equal(0b1000ul, result[1].AffinityMask);
+    }
+
+    [Fact]
+    public void Fewer_than_two_instances_is_a_noop()
+    {
+        Assert.Empty(InstanceBalancerEngine.Balance([1], 0xFF));
+        Assert.Empty(InstanceBalancerEngine.Balance([], 0xFF));
+    }
+
+    [Fact]
+    public void More_instances_than_cores_still_assigns_every_instance()
+    {
+        var result = InstanceBalancerEngine.Balance([1, 2, 3, 4, 5], 0b11); // 5 instances, 2 cores
+
+        Assert.Equal(5, result.Count);
+        Assert.All(result, r => Assert.NotEqual(0ul, r.AffinityMask));
+    }
+}
+
 public class WatchdogEngineTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);

@@ -31,6 +31,7 @@ internal static partial class NativeMethods
 
     internal const uint PROCESS_POWER_THROTTLING_CURRENT_VERSION = 1;
     internal const uint PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1;
+    internal const uint PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION = 0x4;
 
     // ---- NtSetInformationProcess classes ----
     internal const int ProcessIoPriority = 33;
@@ -233,6 +234,14 @@ internal static partial class NativeMethods
 
     [DllImport("kernel32.dll")]
     internal static extern IntPtr GetCurrentProcess();
+
+    // ---- Timer resolution ----
+    /// <summary>Requested/actual values are in 100 ns units. Returns NTSTATUS.</summary>
+    [DllImport("ntdll.dll", SetLastError = true)]
+    internal static extern int NtSetTimerResolution(uint desiredResolution, bool setResolution, out uint currentResolution);
+
+    [DllImport("ntdll.dll", SetLastError = true)]
+    internal static extern int NtQueryTimerResolution(out uint minimum, out uint maximum, out uint current);
 
     // ---- Keep awake ----
     internal const uint ES_CONTINUOUS = 0x80000000;

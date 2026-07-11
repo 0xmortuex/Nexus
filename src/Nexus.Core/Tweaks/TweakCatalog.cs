@@ -102,6 +102,7 @@ public static class TweakCatalog
             [
                 new($@"{Hklm}\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{{adapter}}", "TcpAckFrequency", "dword", "1"),
                 new($@"{Hklm}\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{{adapter}}", "TCPNoDelay", "dword", "1"),
+                new($@"{Hklm}\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{{adapter}}", "TcpDelAckTicks", "dword", "0"),
             ],
         },
         new TweakDefinition
@@ -127,6 +128,61 @@ public static class TweakCatalog
                 new(GamesTask, "Priority", "dword", "6"),
                 new(GamesTask, "Scheduling Category", "string", "High"),
                 new(GamesTask, "SFIO Priority", "string", "High"),
+            ],
+        },
+        new TweakDefinition
+        {
+            Id = "mmcss-responsiveness-max",
+            Name = "MMCSS: give foreground 100% of CPU (SystemResponsiveness 0)",
+            Category = "CPU scheduling",
+            Description = "Removes the 20% CPU MMCSS reserves for background work, letting the foreground app use all cores. Can starve background tasks (recording, chat) — measure.",
+            RegistryOps = [new(SystemProfile, "SystemResponsiveness", "dword", "0")],
+        },
+        new TweakDefinition
+        {
+            Id = "priosep-throughput",
+            Name = "Win32PrioritySeparation: long quanta, throughput (0x2A)",
+            Category = "CPU scheduling",
+            Description = "Longer, foreground-boosted quanta — fewer context switches, marginally higher average FPS at a tiny input-latency cost. The FPS-focused counterpart to the 0x26 preset.",
+            RegistryOps = [new(PriorityControl, "Win32PrioritySeparation", "dword", "0x2A")],
+        },
+
+        // ---- Timers & latency ----
+        new TweakDefinition
+        {
+            Id = "gpu-preemption-off",
+            Name = "Disable GPU preemption",
+            Category = "Timers & latency",
+            Description = "Stops the GPU scheduler from context-switching away from a render job for background graphics work. Can smooth frame pacing; can also cause hangs on some drivers. Reboot required.",
+            Risk = TweakRisk.Medium,
+            RequiresReboot = true,
+            RegistryOps =
+            [
+                new($@"{Hklm}\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler", "EnablePreemption", "dword", "0"),
+            ],
+        },
+        new TweakDefinition
+        {
+            Id = "prefetch-superfetch-off",
+            Name = "Disable Prefetch / SuperFetch (SysMain)",
+            Category = "Timers & latency",
+            Description = "On NVMe SSDs the predictive-preload background I/O often costs more than it saves. On HDDs it HELPS app launch times — do not apply on a mechanical drive.",
+            Risk = TweakRisk.Medium,
+            RegistryOps =
+            [
+                new($@"{Hklm}\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters", "EnablePrefetcher", "dword", "0"),
+                new($@"{Hklm}\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters", "EnableSuperfetch", "dword", "0"),
+            ],
+        },
+        new TweakDefinition
+        {
+            Id = "core-parking-unhide",
+            Name = "Unhide core-parking controls in power options",
+            Category = "Timers & latency",
+            Description = "Reveals the hidden 'Processor performance core parking min cores' slider in advanced power settings so you can set it to 100%. (Nexus's Performance plan already disables parking; this is for manual tuning.)",
+            RegistryOps =
+            [
+                new($@"{Hklm}\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\0cc5b647-c1df-4637-891a-dec35c318583", "Attributes", "dword", "0"),
             ],
         },
 

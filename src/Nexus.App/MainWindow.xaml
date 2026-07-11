@@ -147,6 +147,13 @@
                                 <MenuItem Header="75%" Command="{Binding LimitCpuCommand}" CommandParameter="75"/>
                                 <MenuItem Header="Remove CPU limit" Command="{Binding ClearCpuLimitCommand}"/>
                             </MenuItem>
+                            <MenuItem Header="Launch priority (survives anti-cheat)">
+                                <MenuItem Header="High" Command="{Binding SetLaunchPriorityCommand}" CommandParameter="High"/>
+                                <MenuItem Header="Above normal" Command="{Binding SetLaunchPriorityCommand}" CommandParameter="AboveNormal"/>
+                                <MenuItem Header="Below normal" Command="{Binding SetLaunchPriorityCommand}" CommandParameter="BelowNormal"/>
+                                <MenuItem Header="Idle" Command="{Binding SetLaunchPriorityCommand}" CommandParameter="Idle"/>
+                                <MenuItem Header="Remove launch priority" Command="{Binding ClearLaunchPriorityCommand}"/>
+                            </MenuItem>
                             <Separator/>
                             <MenuItem Header="Trim working set" Command="{Binding TrimCommand}"/>
                             <MenuItem Header="Remove saved rule" Command="{Binding RemoveRuleCommand}"/>
@@ -403,6 +410,85 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ================= Latency & Hardware ================= -->
+        <TabItem Header="Latency &amp; Hardware">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10" DataContext="{Binding Latency}" MaxWidth="900" HorizontalAlignment="Left">
+                    <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,10"
+                               Text="These settings target DPC/interrupt latency and timer behaviour. Most take effect after a reboot, several are hardware-specific, and gains vary a lot between systems — benchmark, and revert anything that doesn't help."/>
+
+                    <GroupBox Header="System timer resolution">
+                        <StackPanel>
+                            <CheckBox Content="Hold the finest timer resolution (≈0.5 ms)" IsChecked="{Binding HighTimerResolution}"/>
+                            <TextBlock Text="{Binding TimerStatus}" Style="{StaticResource DimText}" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Boot timer settings (bcdedit — reboot required, each reversible)">
+                        <ItemsControl ItemsSource="{Binding BootSettings}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,4">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <Button Content="Apply" Width="60" Command="{Binding ApplyCommand}" Margin="0,0,4,0"/>
+                                            <Button Content="Undo" Width="60" Command="{Binding UndoCommand}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,10,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Description}" Style="{StaticResource DimText}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </GroupBox>
+
+                    <GroupBox Header="Interrupt tuning — MSI mode &amp; IRQ affinity (reboot to apply)">
+                        <StackPanel>
+                            <Button Content="Scan devices" Command="{Binding RefreshDevicesCommand}"
+                                    HorizontalAlignment="Left" Margin="0,0,0,6"/>
+                            <ListView ItemsSource="{Binding Devices}" MaxHeight="260">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="MSI" Width="50">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding MsiEnabled}" HorizontalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Device" Width="300" DisplayMemberBinding="{Binding Name}"/>
+                                        <GridViewColumn Header="Class" Width="90" DisplayMemberBinding="{Binding Class}"/>
+                                        <GridViewColumn Header="State" Width="150" DisplayMemberBinding="{Binding State}"/>
+                                        <GridViewColumn Header="Pin IRQ→CPU" Width="150">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBox Text="{Binding PinCore}" Width="40" Margin="0,0,4,0"/>
+                                                        <Button Content="Set" Command="{Binding PinCommand}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                            <TextBlock Style="{StaticResource DimText}" Margin="0,4,0,0"
+                                       Text="MSI (Message Signaled Interrupts) is usually beneficial on modern GPUs/NICs. Leave the pin box empty and Set to clear an affinity override."/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Network adapter latency properties">
+                        <StackPanel>
+                            <TextBlock Text="{Binding NicStatus}" Style="{StaticResource DimText}" Margin="0,0,0,6"/>
+                            <Button Content="Apply latency settings to all adapters" Command="{Binding ApplyNicLatencyCommand}"
+                                    HorizontalAlignment="Left"/>
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>

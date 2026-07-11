@@ -42,6 +42,7 @@ public sealed class ProcessesViewModel : ViewModelBase
     private readonly RulesRepository _rules;
     private readonly RuleApplicationService _ruleApplication;
     private readonly CpuLimiterService _limiter;
+    private readonly IfeoService _ifeo;
     private readonly ActivityLog _log;
 
     public ObservableCollection<ProcessRow> Processes { get; } = [];
@@ -75,6 +76,8 @@ public sealed class ProcessesViewModel : ViewModelBase
     public RelayCommand RemoveRuleCommand { get; }
     public RelayCommand LimitCpuCommand { get; }
     public RelayCommand ClearCpuLimitCommand { get; }
+    public RelayCommand SetLaunchPriorityCommand { get; }
+    public RelayCommand ClearLaunchPriorityCommand { get; }
 
     public ProcessesViewModel(
         ProBalanceService snapshots,
@@ -82,6 +85,7 @@ public sealed class ProcessesViewModel : ViewModelBase
         RulesRepository rules,
         RuleApplicationService ruleApplication,
         CpuLimiterService limiter,
+        IfeoService ifeo,
         ActivityLog log)
     {
         _snapshots = snapshots;
@@ -89,6 +93,7 @@ public sealed class ProcessesViewModel : ViewModelBase
         _rules = rules;
         _ruleApplication = ruleApplication;
         _limiter = limiter;
+        _ifeo = ifeo;
         _log = log;
 
         SetPriorityCommand = new RelayCommand(p => WithSelected(row => SetPriority(row, Parse<ProcessPriority>(p))));
@@ -114,6 +119,19 @@ public sealed class ProcessesViewModel : ViewModelBase
         }));
         ClearCpuLimitCommand = new RelayCommand(() => WithSelected(row =>
             _limiter.TryClearLimit(row.Pid, row.ExeName, out _)));
+        SetLaunchPriorityCommand = new RelayCommand(p => WithSelected(row =>
+        {
+            if (!_ifeo.SetLaunchPriority(row.ExeName, Parse<ProcessPriority>(p), null, null, out var error))
+                Report(error);
+            else
+                _log.Info("Processes",
+                    $"{row.ExeName} will launch at {p} priority from now on (kernel-enforced, survives anti-cheat).");
+        }));
+        ClearLaunchPriorityCommand = new RelayCommand(() => WithSelected(row =>
+        {
+            if (!_ifeo.Clear(row.ExeName, out var error))
+                Report(error);
+        }));
     }
 
     private static T Parse<T>(object? parameter) where T : struct, Enum

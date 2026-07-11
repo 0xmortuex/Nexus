@@ -69,6 +69,12 @@ public partial class App : System.Windows.Application
         var foregroundBoost = new ForegroundBoostService(foreground, api, log, settings, gameMode);
         var lifecycle = new RuleLifecycleService(watcher, rules, keepAwake, limiter, kills, log);
         var dns = new DnsService(log, paths);
+        var balancer = new InstanceBalancerService(watcher, api, topology, settings, log);
+        var timerResolution = new TimerResolutionService(log, settings);
+        var ifeo = new IfeoService(log);
+        var bootTimer = new BootTimerService(log);
+        var interrupts = new InterruptTuningService(log);
+        var nic = new NicTuningService(log);
         var recovery = new CrashRecoveryService(journal, api, power, log);
         idleSaver.IsSuppressed = () => gameMode.IsActive;
 
@@ -86,7 +92,7 @@ public partial class App : System.Windows.Application
 
         _disposables.AddRange([watcher, ruleApplication, proBalance, enforcement,
             idleSaver, smartTrim, keepAwake, standby, foreground, gameMode,
-            foregroundBoost, lifecycle, limiter]);
+            foregroundBoost, lifecycle, limiter, balancer, timerResolution]);
 
         // ---- Crash recovery BEFORE any engine starts mutating ----
         recovery.RecoverIfNeeded();
@@ -103,16 +109,19 @@ public partial class App : System.Windows.Application
         gameMode.Start();
         foregroundBoost.Start();
         lifecycle.Start();
+        balancer.Start();
+        timerResolution.Start();
 
         // ---- UI ----
         var mainViewModel = new MainViewModel
         {
             Dashboard = new DashboardViewModel(proBalance, rules, topology),
             Suggestions = new SuggestionsViewModel(suggestions),
-            Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, limiter, log),
+            Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, limiter, ifeo, log),
             GameMode = new GameModeViewModel(gameMode, games, settings),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
+            Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),
             RestoreDefaultsCommand = new RelayCommand(() =>

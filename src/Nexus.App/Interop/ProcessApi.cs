@@ -147,11 +147,16 @@ public sealed class ProcessApi
             NativeMethods.PROCESS_SET_INFORMATION | NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION,
             handle =>
             {
+                // When enabling efficiency mode, also tell the OS to ignore any
+                // high-resolution-timer request from this background process (report
+                // §EcoQoS) so it can't pull the whole system to a fast timer tick.
+                uint flags = NativeMethods.PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+                           | NativeMethods.PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
                 var state = new NativeMethods.PROCESS_POWER_THROTTLING_STATE
                 {
                     Version = NativeMethods.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-                    ControlMask = enable is null ? 0 : NativeMethods.PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-                    StateMask = enable == true ? NativeMethods.PROCESS_POWER_THROTTLING_EXECUTION_SPEED : 0,
+                    ControlMask = enable is null ? 0 : flags,
+                    StateMask = enable == true ? flags : 0,
                 };
                 return NativeMethods.SetProcessInformation(handle, NativeMethods.ProcessPowerThrottlingInfo,
                     ref state, Marshal.SizeOf<NativeMethods.PROCESS_POWER_THROTTLING_STATE>());
