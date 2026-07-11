@@ -25,6 +25,18 @@ public sealed class TweakRow : ViewModelBase
     public bool IsApplied => _service.IsApplied(Tweak.Id);
     public string ButtonText => IsApplied ? "Undo" : "Apply";
 
+    private Nexus.Core.Advisor.OptimizationInfo? Info => Nexus.Core.Advisor.OptimizationCatalog.Find(Tweak.Id);
+
+    /// <summary>1–4 filled bars; the honest average impact of this tweak.</summary>
+    public int EffectivenessBars => (int)(Info?.Effectiveness ?? Nexus.Core.Advisor.Effectiveness.Minor);
+    public string EffectivenessLabel => (Info?.Effectiveness ?? Nexus.Core.Advisor.Effectiveness.Minor).ToString();
+    public string ImpactText => Info is null ? "" : SplitCamel(Info.Impact.ToString());
+    public string Pros => Info is { } i ? "＋ " + string.Join("\n＋ ", i.Pros) : "";
+    public string Cons => Info is { } i ? "－ " + string.Join("\n－ ", i.Cons) : "";
+
+    private static string SplitCamel(string s)
+        => string.Concat(s.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLower(c) : c.ToString()));
+
     public void NotifyStateChanged()
     {
         OnPropertyChanged(nameof(IsApplied));

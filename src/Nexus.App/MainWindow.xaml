@@ -31,6 +31,42 @@
                                    Text="Blue bars are P-cores/standard cores, green bars are E-cores."/>
                     </StackPanel>
                     <StackPanel Grid.Column="1">
+                        <GroupBox Header="System optimization rating">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="64" Height="64" CornerRadius="10" Background="{StaticResource PanelAltBrush}">
+                                        <TextBlock Text="{Binding RatingGrade}" FontSize="30" FontWeight="Bold"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource AccentBrush}"/>
+                                    </Border>
+                                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock FontSize="20" FontWeight="SemiBold">
+                                            <Run Text="{Binding RatingScore, Mode=OneWay}"/><Run Text=" / 100" Foreground="{StaticResource TextDimBrush}" FontSize="13"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding RatingSummary}" Style="{StaticResource DimText}" MaxWidth="220"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding RatingCategories}" Margin="0,10,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="110"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="42"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Category}" FontSize="11.5" VerticalAlignment="Center"/>
+                                                <ProgressBar Grid.Column="1" Value="{Binding Score, Mode=OneWay}" Maximum="100" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Score, StringFormat={}{0}%}" FontSize="11" TextAlignment="Right"
+                                                           Foreground="{StaticResource TextDimBrush}" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="Open setup wizard" Margin="0,10,0,0" HorizontalAlignment="Left"
+                                        Command="{Binding DataContext.OpenWizardCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                            </StackPanel>
+                        </GroupBox>
                         <GroupBox Header="Suggested optimizations"
                                   DataContext="{Binding DataContext.Suggestions, RelativeSource={RelativeSource AncestorType=Window}}">
                             <StackPanel>
@@ -192,7 +228,22 @@
                 <ListView Grid.Row="2" ItemsSource="{Binding Games}">
                     <ListView.View>
                         <GridView>
-                            <GridViewColumn Header="Game" Width="240" DisplayMemberBinding="{Binding ExeName}"/>
+                            <GridViewColumn Header="Game" Width="200" DisplayMemberBinding="{Binding ExeName}"/>
+                            <GridViewColumn Header="Rating" Width="120">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" ToolTip="{Binding RatingDetail}">
+                                            <Border Width="26" Height="20" CornerRadius="5" Background="{StaticResource PanelAltBrush}" Margin="0,0,6,0">
+                                                <TextBlock Text="{Binding RatingGrade}" FontWeight="Bold" FontSize="12"
+                                                           Foreground="{StaticResource AccentBrush}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding RatingScore, StringFormat={}{0}/100}" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextDimBrush}" FontSize="11.5"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
                             <GridViewColumn Header="Enabled" Width="80">
                                 <GridViewColumn.CellTemplate>
                                     <DataTemplate>
@@ -254,14 +305,40 @@
                         <ItemsControl ItemsSource="{Binding Tweaks}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <DockPanel Margin="0,4">
-                                        <Button DockPanel.Dock="Right" Width="70" Content="{Binding ButtonText}"
-                                                Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
-                                        <StackPanel Margin="0,0,10,0">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding Description}" Style="{StaticResource DimText}"/>
-                                        </StackPanel>
-                                    </DockPanel>
+                                    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Width="70" Content="{Binding ButtonText}"
+                                                    Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
+                                            <StackPanel Margin="0,0,10,0">
+                                                <DockPanel>
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                                        <TextBlock Text="{Binding EffectivenessLabel}" Style="{StaticResource DimText}"
+                                                                   FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                        <Border Width="7" Height="13" CornerRadius="2" Margin="1,0"
+                                                                Background="{Binding EffectivenessBars, Converter={StaticResource BarsToBrush}, ConverterParameter=1}"/>
+                                                        <Border Width="7" Height="13" CornerRadius="2" Margin="1,0"
+                                                                Background="{Binding EffectivenessBars, Converter={StaticResource BarsToBrush}, ConverterParameter=2}"/>
+                                                        <Border Width="7" Height="13" CornerRadius="2" Margin="1,0"
+                                                                Background="{Binding EffectivenessBars, Converter={StaticResource BarsToBrush}, ConverterParameter=3}"/>
+                                                        <Border Width="7" Height="13" CornerRadius="2" Margin="1,0"
+                                                                Background="{Binding EffectivenessBars, Converter={StaticResource BarsToBrush}, ConverterParameter=4}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding Description}" Style="{StaticResource DimText}" Margin="0,3,0,0"/>
+                                                <Grid Margin="0,6,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding Pros}" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource AccentAltBrush}" FontSize="11" Margin="0,0,8,0"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Cons}" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource WarnBrush}" FontSize="11"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -581,9 +658,13 @@
                             <CheckBox Content="Start with Windows (scheduled task, highest privileges)" IsChecked="{Binding StartWithWindows}"/>
                         </StackPanel>
                     </GroupBox>
-                    <Button Content="Restore ALL defaults (undo every tweak, rule and power change)…"
-                            Command="{Binding DataContext.RestoreDefaultsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            HorizontalAlignment="Left" Margin="0,10,0,20"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,20">
+                        <Button Content="Run setup wizard…"
+                                Command="{Binding DataContext.OpenWizardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                Margin="0,0,8,0"/>
+                        <Button Content="Restore ALL defaults (undo every tweak, rule and power change)…"
+                                Command="{Binding DataContext.RestoreDefaultsCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
         </TabItem>

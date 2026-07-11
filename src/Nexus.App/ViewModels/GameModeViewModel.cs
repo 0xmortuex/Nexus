@@ -8,15 +8,24 @@ namespace Nexus.App.ViewModels;
 public sealed class GameProfileRow : ViewModelBase
 {
     private readonly GameProfileRepository _repository;
+    private readonly bool _isHybrid;
     private GameProfile _profile;
 
-    public GameProfileRow(GameProfile profile, GameProfileRepository repository)
+    public GameProfileRow(GameProfile profile, GameProfileRepository repository, bool isHybrid)
     {
         _profile = profile;
         _repository = repository;
+        _isHybrid = isHybrid;
     }
 
     public string ExeName => _profile.ExeName;
+
+    private Nexus.Core.Advisor.GameRating Rating => Nexus.Core.Advisor.GameRatingEngine.Rate(_profile, _isHybrid);
+    public int RatingScore => Rating.Score;
+    public string RatingGrade => Rating.Grade;
+    /// <summary>Multi-line "aspect — note" tuning breakdown for the tooltip/expander.</summary>
+    public string RatingDetail => string.Join("\n",
+        Rating.Aspects.Select(a => $"{(a.Active ? "✓" : "·")} {a.Name} — {a.Note}"));
 
     public bool Enabled
     {
@@ -52,7 +61,7 @@ public sealed class GameProfileRow : ViewModelBase
     {
         _profile = mutate(_profile);
         _repository.Upsert(_profile);
-        OnPropertyChanged(null);
+        OnPropertyChanged(null); // refresh every bound property incl. the rating
     }
 }
 
@@ -100,11 +109,14 @@ public sealed class GameModeViewModel : ViewModelBase
     public RelayCommand ForceCommand { get; }
     public RelayCommand EndCommand { get; }
 
-    public GameModeViewModel(GameModeService gameMode, GameProfileRepository profiles, SettingsService settings)
+    private readonly bool _isHybrid;
+
+    public GameModeViewModel(GameModeService gameMode, GameProfileRepository profiles, SettingsService settings, bool isHybrid)
     {
         _gameMode = gameMode;
         _profiles = profiles;
         _settings = settings;
+        _isHybrid = isHybrid;
 
         AddGameCommand = new RelayCommand(() =>
         {
@@ -133,7 +145,7 @@ public sealed class GameModeViewModel : ViewModelBase
     {
         Games.Clear();
         foreach (var profile in _profiles.All().OrderBy(p => p.ExeName))
-            Games.Add(new GameProfileRow(profile, _profiles));
+            Games.Add(new GameProfileRow(profile, _profiles, _isHybrid));
         OnPropertyChanged(nameof(StatusText));
     }
 }

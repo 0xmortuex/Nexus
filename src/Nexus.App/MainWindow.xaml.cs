@@ -39,6 +39,8 @@ public partial class MainWindow : Window
         _viewModel.Dashboard.Refresh();
         if (_tick % 2 == 0)
             _viewModel.Processes.Refresh();
+        if (_tick % 10 == 0)
+            _viewModel.Dashboard.RefreshRating(); // rating changes rarely; recompute occasionally
     }
 
     protected override void OnClosing(CancelEventArgs e)

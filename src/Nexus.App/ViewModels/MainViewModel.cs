@@ -12,4 +12,5 @@ public sealed class MainViewModel : ViewModelBase
     public required LogViewModel Log { get; init; }
     public required SettingsViewModel Settings { get; init; }
     public required RelayCommand RestoreDefaultsCommand { get; init; }
+    public required RelayCommand OpenWizardCommand { get; init; }
 }

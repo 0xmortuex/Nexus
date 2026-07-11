@@ -17,6 +17,7 @@ public partial class App : System.Windows.Application
     private ActivityLog? _log;
     private MainWindow? _window;
     private TrayIconService? _tray;
+    private Action? _showWizard;
     private readonly List<IDisposable> _disposables = [];
 
     protected override void OnStartup(StartupEventArgs e)
@@ -87,6 +88,7 @@ public partial class App : System.Windows.Application
         var startup = new StartupManagerService(log);
         var autostart = new AutostartService(log);
         var suggestions = new SuggestionService(tweaks, debloat, settings, games, power, topology, log);
+        var rating = new RatingService(tweaks, debloat, dns, settings, games, topology, () => keepAwake.Enabled);
         var restoreDefaults = new RestoreDefaultsService(
             tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns, log);
 
@@ -115,10 +117,10 @@ public partial class App : System.Windows.Application
         // ---- UI ----
         var mainViewModel = new MainViewModel
         {
-            Dashboard = new DashboardViewModel(proBalance, rules, topology),
+            Dashboard = new DashboardViewModel(proBalance, rules, topology, rating),
             Suggestions = new SuggestionsViewModel(suggestions),
             Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, limiter, ifeo, log),
-            GameMode = new GameModeViewModel(gameMode, games, settings),
+            GameMode = new GameModeViewModel(gameMode, games, settings, topology.Topology.IsHybrid),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic),
@@ -138,9 +140,23 @@ public partial class App : System.Windows.Application
                     "Nexus", MessageBoxButton.OK,
                     failures.Count == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
             }),
+            OpenWizardCommand = new RelayCommand(() => _showWizard?.Invoke()),
         };
 
         _window = new MainWindow(mainViewModel);
+
+        _showWizard = () =>
+        {
+            var wizardVm = new WizardViewModel(suggestions, rating, rating.RateGames, () =>
+            {
+                settings.Update(s => s with { WizardCompleted = true });
+                mainViewModel.Dashboard.RefreshRating();
+                mainViewModel.Suggestions.Refresh();
+                mainViewModel.GameMode.Reload();
+            });
+            var wizard = new WizardWindow(wizardVm) { Owner = _window };
+            wizard.ShowDialog();
+        };
 
         _tray = new TrayIconService(proBalance, power, gameMode, settings);
         _tray.OpenRequested += () =>
@@ -157,6 +173,10 @@ public partial class App : System.Windows.Application
 
         _window.Show();
         log.Info("App", "Nexus ready. Closing the window minimizes to the tray.");
+
+        // First run: guide the user through setup.
+        if (!settings.Current.WizardCompleted)
+            _window.Dispatcher.BeginInvoke(_showWizard);
     }
 
     protected override void OnExit(ExitEventArgs e)

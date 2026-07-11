@@ -14,14 +14,38 @@ public sealed class DashboardViewModel : ViewModelBase
     private readonly ProBalanceService _proBalance;
     private readonly RulesRepository _rules;
     private readonly CpuTopologyProvider _topology;
+    private readonly Services.RatingService _rating;
     private readonly Queue<double> _cpuHistory = new(HistoryLength);
     private readonly Queue<double> _ramHistory = new(HistoryLength);
 
-    public DashboardViewModel(ProBalanceService proBalance, RulesRepository rules, CpuTopologyProvider topology)
+    public DashboardViewModel(ProBalanceService proBalance, RulesRepository rules,
+        CpuTopologyProvider topology, Services.RatingService rating)
     {
         _proBalance = proBalance;
         _rules = rules;
         _topology = topology;
+        _rating = rating;
+        RefreshRating();
+    }
+
+    // ---- System optimization rating ----
+    public int RatingScore { get; private set; }
+    public string RatingGrade { get; private set; } = "—";
+    public string RatingSummary { get; private set; } = "";
+    public IReadOnlyList<Nexus.Core.Advisor.CategoryRating> RatingCategories { get; private set; } = [];
+
+    /// <summary>Recomputed on demand (dashboard timer every ~10 s, and after the wizard).</summary>
+    public void RefreshRating()
+    {
+        var rating = _rating.RateSystem();
+        RatingScore = rating.Score;
+        RatingGrade = rating.Grade;
+        RatingSummary = rating.Summary;
+        RatingCategories = rating.Categories;
+        OnPropertyChanged(nameof(RatingScore));
+        OnPropertyChanged(nameof(RatingGrade));
+        OnPropertyChanged(nameof(RatingSummary));
+        OnPropertyChanged(nameof(RatingCategories));
     }
 
     public IReadOnlyList<double> CpuHistory { get; private set; } = [];

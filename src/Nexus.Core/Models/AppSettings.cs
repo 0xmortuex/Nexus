@@ -48,4 +48,6 @@ public sealed record AppSettings
     public bool ForegroundBoost { get; init; }
     /// <summary>Hold the finest system timer resolution (NtSetTimerResolution).</summary>
     public bool HighTimerResolution { get; init; }
+    /// <summary>Set once the first-run setup wizard has been completed or skipped.</summary>
+    public bool WizardCompleted { get; init; }
 }
