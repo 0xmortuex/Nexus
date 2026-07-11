@@ -127,6 +127,38 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 
+    // ---- Window facts (game detection) ----
+    internal const int GWL_STYLE = -16;
+    internal const int GWL_EXSTYLE = -20;
+    internal const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MONITORINFO
+    {
+        public uint Size;
+        public RECT Monitor;
+        public RECT Work;
+        public uint Flags;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
+    internal static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern bool GetMonitorInfoW(IntPtr monitor, ref MONITORINFO info);
+
     // ---- Idle detection ----
     [StructLayout(LayoutKind.Sequential)]
     internal struct LASTINPUTINFO

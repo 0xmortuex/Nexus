@@ -86,3 +86,26 @@ Not testable off-Windows (deferred to the manual checklist):
 - `SetThreadExecutionState` behavior (verify the PC doesn't sleep with Keep Awake
   on; the flag is asserted from a dedicated thread and re-asserted hourly).
 - Kill/restart of real processes and access-denied handling for elevated targets.
+
+## Stage 4 — Game Mode
+
+`dotnet build`: clean, 0 warnings. `dotnet test`: 60/60 passed (14 new).
+
+Covered by automated tests:
+- Game detection: borderless/exclusive fullscreen (caption-less window covering the
+  monitor ±2 px) detected; windowed and maximized-with-caption apps rejected; known
+  non-games (browsers, players, OBS, launchers, PowerPoint) rejected even when
+  fullscreen; user game list wins even windowed; user ignore list beats the game
+  list; partial coverage on ultrawide rejected; protected processes never count.
+- Intended-state journal: persists across instances (crash simulation via fresh
+  object over the same file), first mutation record per PID wins (originals are
+  never overwritten by later demotions), previous power plan is never overwritten,
+  clear leaves nothing pending. Journal writes are flushed to disk before the
+  corresponding mutation is applied (write-ahead).
+
+Not testable off-Windows (deferred to the manual checklist):
+- Live foreground polling (GetWindowRect / GetWindowLongPtr / GetMonitorInfo).
+- End-to-end enter/exit: priority + P-core pinning of a real game, hog demotion
+  with EcoQoS, power plan switch, wuauserv stop/start, and full revert on exit.
+- Crash recovery on a real machine: kill Nexus mid-game-mode, relaunch, verify
+  every change is rolled back.

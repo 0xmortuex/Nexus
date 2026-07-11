@@ -1,4 +1,5 @@
 using Nexus.Core.Enforcement;
+using Nexus.Core.GameMode;
 using Nexus.Core.ProBalance;
 
 namespace Nexus.Core.Models;
@@ -29,4 +30,5 @@ public sealed record AppSettings
     public IdleSaverOptions IdleSaver { get; init; } = new();
     public SmartTrimOptions SmartTrim { get; init; } = new();
     public PowerOptions Power { get; init; } = new();
+    public GameModeOptions GameMode { get; init; } = new();
 }
