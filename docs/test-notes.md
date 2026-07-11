@@ -134,3 +134,39 @@ Not testable off-Windows (deferred to the manual checklist):
 - Service stop + start-type changes, schtasks disable/enable, Remove-AppxPackage.
 - StartupApproved byte format interop with Task Manager's Startup page.
 - Real cache sizes/deletions with in-use file skipping.
+
+## Stage 6 — WPF UI
+
+`dotnet build`: clean, 0 warnings. `dotnet test`: 73/73 passed (UI has no
+Linux-runnable logic; view models are thin adapters over the tested services).
+
+Notes for the first Windows run:
+- The theme restyles Button/TabItem templates; verify no white-on-white areas.
+- Chart controls are custom OnRender code — verify the sparkline and per-core
+  bars actually draw (an empty rect means the Values binding broke).
+- The WinForms global usings were removed project-wide (`<Using Remove=…>`);
+  TrayIconService is the only WinForms consumer and fully qualifies its types.
+
+## Stage 7 — Hardening & ship
+
+`dotnet build -c Release`: clean. `dotnet test`: 73/73.
+`dotnet publish src/Nexus.App -c Release -r win-x64 --self-contained
+-p:PublishSingleFile=true` → single 66 MB Nexus.exe (compression on); the
+embedded manifest was verified present in the apphost (`requireAdministrator`
+and `PerMonitorV2` both found in the binary).
+
+P/Invoke audit: all DllImports live in `Interop/NativeMethods.cs` (internal);
+every call site is wrapped — ProcessApi (WithHandle + never-touch check),
+CpuTopologyProvider, SystemSampler (guarded by ProBalanceService.Tick),
+ForegroundInfo, ForegroundMonitor, IdleSaverService, KeepAwakeService all
+catch-and-log. No raw P/Invoke escapes to feature code, so the planned
+InteropGuard helper had no call sites and was deliberately not added.
+
+Safety review: kills route through EnforcementService.TryKill or the Processes
+tab, both gated on ProcessSafety.IsProtected; priority/affinity/EcoQoS/trim all
+route through ProcessApi which re-checks the never-touch list; ProBalance and
+SmartTrim additionally use the restraint-exempt list (shell, audio, self).
+
+Final verification on Windows: `docs/manual-test-checklist.md` (7 sections,
+covers every feature including the Game Mode crash test and anti-cheat
+never-touch verification).
