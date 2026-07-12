@@ -50,4 +50,7 @@ public sealed record AppSettings
     public bool HighTimerResolution { get; init; }
     /// <summary>Set once the first-run setup wizard has been completed or skipped.</summary>
     public bool WizardCompleted { get; init; }
+    /// <summary>Advanced (Developer) mode: reveals the Processes list, the Latency &amp;
+    /// Hardware tab and the deeper Tweaks sections. Off = the simple, guided app.</summary>
+    public bool AdvancedMode { get; init; }
 }

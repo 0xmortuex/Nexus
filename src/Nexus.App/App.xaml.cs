@@ -115,7 +115,7 @@ public partial class App : System.Windows.Application
         timerResolution.Start();
 
         // ---- UI ----
-        var mainViewModel = new MainViewModel
+        var mainViewModel = new MainViewModel(settings)
         {
             Dashboard = new DashboardViewModel(proBalance, rules, topology, rating),
             Suggestions = new SuggestionsViewModel(suggestions),

@@ -4,7 +4,24 @@
         xmlns:controls="clr-namespace:Nexus.App.Controls"
         Title="Nexus Optimizer" Height="760" Width="1180"
         Background="{StaticResource BgBrush}">
-    <TabControl x:Name="Tabs" Margin="8">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: app name + mode switch -->
+        <DockPanel Grid.Row="0" Margin="12,10,12,0" LastChildFill="False">
+            <TextBlock Text="Nexus" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Border Margin="10,0,0,0" Padding="7,2" CornerRadius="6" VerticalAlignment="Center"
+                    Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                <TextBlock Text="{Binding ModeLabel}" FontSize="11" Foreground="{StaticResource AccentBrush}"/>
+            </Border>
+            <Button DockPanel.Dock="Right" Content="{Binding ModeButtonText}" Command="{Binding ToggleModeCommand}"
+                    VerticalAlignment="Center"/>
+        </DockPanel>
+
+    <TabControl Grid.Row="1" x:Name="Tabs" Margin="8">
 
         <!-- ================= Dashboard ================= -->
         <TabItem Header="Dashboard">
@@ -120,7 +137,8 @@
         </TabItem>
 
         <!-- ================= Processes ================= -->
-        <TabItem Header="Processes">
+        <TabItem Header="Processes"
+                 Visibility="{Binding IsAdvanced, Converter={StaticResource BoolToVisibility}}">
             <Grid Margin="10" DataContext="{Binding Processes}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -344,7 +362,8 @@
                         </ItemsControl>
                     </GroupBox>
 
-                    <GroupBox Header="Debloat — services (disable only, reversible)">
+                    <GroupBox Header="Debloat — services (disable only, reversible)"
+                              Visibility="{Binding DataContext.IsAdvanced, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}">
                         <ItemsControl ItemsSource="{Binding Services}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -361,7 +380,8 @@
                         </ItemsControl>
                     </GroupBox>
 
-                    <GroupBox Header="Debloat — telemetry scheduled tasks (disable only, reversible)">
+                    <GroupBox Header="Debloat — telemetry scheduled tasks (disable only, reversible)"
+                              Visibility="{Binding DataContext.IsAdvanced, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}">
                         <ItemsControl ItemsSource="{Binding Tasks}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -378,7 +398,8 @@
                         </ItemsControl>
                     </GroupBox>
 
-                    <GroupBox Header="Debloat — preinstalled apps (removal is one-way; nothing is pre-checked)">
+                    <GroupBox Header="Debloat — preinstalled apps (removal is one-way; nothing is pre-checked)"
+                              Visibility="{Binding DataContext.IsAdvanced, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel>
                             <ItemsControl ItemsSource="{Binding Apps}">
                                 <ItemsControl.ItemTemplate>
@@ -422,7 +443,8 @@
                         </StackPanel>
                     </GroupBox>
 
-                    <GroupBox Header="Startup manager (enable/disable only — nothing is deleted)">
+                    <GroupBox Header="Startup manager (enable/disable only — nothing is deleted)"
+                              Visibility="{Binding DataContext.IsAdvanced, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel>
                             <Button Content="Refresh" Command="{Binding RefreshStartupCommand}"
                                     HorizontalAlignment="Left" Margin="0,0,0,6"/>
@@ -494,7 +516,8 @@
         </TabItem>
 
         <!-- ================= Latency & Hardware ================= -->
-        <TabItem Header="Latency &amp; Hardware">
+        <TabItem Header="Latency &amp; Hardware"
+                 Visibility="{Binding IsAdvanced, Converter={StaticResource BoolToVisibility}}">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="10" DataContext="{Binding Latency}" MaxWidth="900" HorizontalAlignment="Left">
                     <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,10"
@@ -669,4 +692,5 @@
             </ScrollViewer>
         </TabItem>
     </TabControl>
+    </Grid>
 </Window>

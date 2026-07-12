@@ -27,6 +27,14 @@ public partial class MainWindow : Window
         _timer.Tick += (_, _) => Refresh();
         _timer.Start();
 
+        // Leaving Advanced mode may hide the current tab; fall back to Dashboard so
+        // the pane never goes blank.
+        _viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.IsAdvanced) && !_viewModel.IsAdvanced)
+                Tabs.SelectedIndex = 0;
+        };
+
         _viewModel.Tweaks.RefreshStartup();
     }
 
