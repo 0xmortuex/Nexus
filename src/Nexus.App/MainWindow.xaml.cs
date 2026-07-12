@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Nexus.App.ViewModels;
 
@@ -36,6 +38,26 @@ public partial class MainWindow : Window
         };
 
         _viewModel.Tweaks.RefreshStartup();
+
+        // Boot reveal: the whole shell fades and rises in as it powers on.
+        Loaded += (_, _) =>
+        {
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            Root.BeginAnimation(OpacityProperty,
+                new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(420))) { EasingFunction = ease });
+            RootShift.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
+                new DoubleAnimation(16, 0, new Duration(TimeSpan.FromMilliseconds(520))) { EasingFunction = ease });
+        };
+
+        // Gentle cross-fade whenever the active tab changes.
+        Tabs.SelectionChanged += (s, e) =>
+        {
+            if (!ReferenceEquals(e.OriginalSource, Tabs))
+                return; // ignore selection bubbling up from inner ListViews/ComboBoxes
+            if (Tabs.SelectedContent is UIElement content)
+                content.BeginAnimation(OpacityProperty,
+                    new DoubleAnimation(0.3, 1, new Duration(TimeSpan.FromMilliseconds(220))));
+        };
     }
 
     private void Refresh()

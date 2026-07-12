@@ -84,8 +84,42 @@ public sealed class SparklineControl : FrameworkElement
         }
         line.Freeze();
 
-        var pen = new Pen(Stroke, 1.5);
+        var pen = new Pen(Stroke, 1.6);
         pen.Freeze();
         context.DrawGeometry(null, pen, line);
+
+        // Glowing leading dot at the newest sample — the "alive" endpoint.
+        var last = At(values.Count - 1);
+        if (Stroke is SolidColorBrush sb)
+        {
+            var c = sb.Color;
+            var glowFar = new SolidColorBrush(Color.FromArgb(40, c.R, c.G, c.B));
+            var glowNear = new SolidColorBrush(Color.FromArgb(90, c.R, c.G, c.B));
+            glowFar.Freeze();
+            glowNear.Freeze();
+            context.DrawEllipse(glowFar, null, last, 7 * _pulse, 7 * _pulse);
+            context.DrawEllipse(glowNear, null, last, 4, 4);
+        }
+        context.DrawEllipse(Stroke, null, last, 2.4, 2.4);
     }
+
+    // Gentle breathing pulse for the endpoint glow, driven by the render clock.
+    private double _pulse = 1.0;
+
+    public SparklineControl()
+    {
+        var pulse = new System.Windows.Media.Animation.DoubleAnimation(0.8, 1.25,
+            new Duration(TimeSpan.FromMilliseconds(1400)))
+        {
+            AutoReverse = true,
+            RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+        };
+        var clock = pulse.CreateClock();
+        ApplyAnimationClock(PulseProperty, clock);
+    }
+
+    private static readonly DependencyProperty PulseProperty = DependencyProperty.Register(
+        nameof(_pulse), typeof(double), typeof(SparklineControl),
+        new FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.AffectsRender,
+            (d, e) => ((SparklineControl)d)._pulse = (double)e.NewValue));
 }
