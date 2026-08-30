@@ -145,6 +145,8 @@ public static class Program
     private static IReadOnlyList<IStaticEngine> BuildEngines() =>
     [
         new PeStaticEngine(),
+        new ScriptStaticEngine(),
+        new ArchiveStaticEngine(),
         PatternSignatureEngine.Create(),
         YaraEngine.Create(),
         MachineLearningEngine.Create(),

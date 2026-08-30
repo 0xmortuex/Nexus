@@ -4,6 +4,7 @@ using Nexus.Core.Logging;
 using Nexus.Core.Security;
 using Nexus.Core.Security.Behavior;
 using Nexus.Core.Security.Persistence;
+using Nexus.Core.Security.Ransomware;
 
 namespace Nexus.App.Services.Security;
 
@@ -35,6 +36,9 @@ public sealed class SentinelService : IDisposable
     private readonly ProcessDetailWatcher _behaviour;
     private readonly TrustStore _trust;
     private readonly VerdictCache _cache;
+    private readonly RansomwareGuardService _ransomware;
+    private readonly DefenderHealthService _defender;
+    private readonly NetworkMonitorService _network;
 
     private readonly List<SecurityAlert> _alerts = [];
     private readonly object _gate = new();
@@ -53,7 +57,10 @@ public sealed class SentinelService : IDisposable
         AutorunEnumerator autoruns,
         ProcessDetailWatcher behaviour,
         TrustStore trust,
-        VerdictCache cache)
+        VerdictCache cache,
+        RansomwareGuardService ransomware,
+        DefenderHealthService defender,
+        NetworkMonitorService network)
     {
         _log = log;
         _identity = identity;
@@ -64,6 +71,9 @@ public sealed class SentinelService : IDisposable
         _behaviour = behaviour;
         _trust = trust;
         _cache = cache;
+        _ransomware = ransomware;
+        _defender = defender;
+        _network = network;
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -84,6 +94,11 @@ public sealed class SentinelService : IDisposable
 
         _behaviour.FindingRaised += OnBehaviourFinding;
         _behaviour.Start();
+
+        _ransomware.Detected += OnRansomwareFinding;
+        _ransomware.Start();
+
+        ReportDefenderHealth();
 
         _log.Info("Sentinel",
             _scanner.IsAvailable
@@ -227,6 +242,90 @@ public sealed class SentinelService : IDisposable
         return verdicts;
     }
 
+    // ---- Ransomware ----
+
+    private void OnRansomwareFinding(RansomwareFinding finding)
+    {
+        var target = finding.ExamplePaths.Count > 0
+            ? ScanTarget.ForFile(finding.ExamplePaths[0])
+            : ScanTarget.ForFile("your documents");
+
+        var verdict = VerdictEngine.Evaluate(new VerdictInput
+        {
+            Target = target,
+            Signals = finding.Signals,
+            EnginesConsulted = new HashSet<SignalSource> { SignalSource.Behavior },
+        }, finding.DetectedAt);
+
+        Report(verdict, origin: "ransomware watch");
+    }
+
+    // ---- Microsoft Defender ----
+
+    /// <summary>The current state of the protection that actually blocks things.</summary>
+    public DefenderStatus DefenderStatus { get; private set; } = new() { Available = false };
+
+    public string DefenderSummary => DefenderHealthService.Describe(DefenderStatus);
+
+    /// <summary>Re-read Defender's state and report anything wrong with it.</summary>
+    public void ReportDefenderHealth()
+    {
+        DefenderStatus = _defender.Query();
+
+        var signals = DefenderHealthService.Evaluate(DefenderStatus);
+        if (signals.Count == 0)
+            return;
+
+        var verdict = VerdictEngine.Evaluate(new VerdictInput
+        {
+            Target = ScanTarget.ForFile("Microsoft Defender"),
+            Signals = signals,
+            EnginesConsulted = new HashSet<SignalSource> { SignalSource.Persistence },
+        }, DateTimeOffset.Now);
+
+        Report(verdict, origin: "Defender health");
+    }
+
+    // ---- Network ----
+
+    /// <summary>Who is talking to the internet right now.</summary>
+    public IReadOnlyList<ConnectionInfo> GetConnections() => _network.GetConnections();
+
+    /// <summary>Check current connections and report anything odd.</summary>
+    public int AuditConnections()
+    {
+        var connections = _network.GetConnections();
+        var signals = _network.Evaluate(connections, ResolveImagePath);
+
+        if (signals.Count > 0)
+        {
+            var verdict = VerdictEngine.Evaluate(new VerdictInput
+            {
+                Target = ScanTarget.ForFile("network connections"),
+                Signals = signals,
+                EnginesConsulted = new HashSet<SignalSource> { SignalSource.Behavior },
+            }, DateTimeOffset.Now);
+
+            Report(verdict, origin: "network check");
+        }
+
+        return connections.Count;
+    }
+
+    private static string? ResolveImagePath(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.MainModule?.FileName;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
+                                       or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
     // ---- Behaviour ----
 
     private void OnBehaviourFinding(BehaviorFinding finding)
@@ -286,6 +385,8 @@ public sealed class SentinelService : IDisposable
     {
         _behaviour.FindingRaised -= OnBehaviourFinding;
         _behaviour.Dispose();
+        _ransomware.Detected -= OnRansomwareFinding;
+        _ransomware.Dispose();
         _scanner.Dispose();
     }
 }

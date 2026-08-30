@@ -13,6 +13,7 @@ using Nexus.Core.Persistence;
 using Nexus.Core.Rules;
 using Nexus.Core.Security;
 using Nexus.Core.Security.Behavior;
+using Nexus.Core.Security.Ransomware;
 using Nexus.Core.Tweaks;
 
 namespace Nexus.App;
@@ -110,9 +111,14 @@ public partial class App : System.Windows.Application
         var quarantineJournal = new QuarantineJournal(paths);
         var quarantine = new QuarantineService(quarantineJournal, paths, log);
         var verdictCache = new VerdictCache(paths, SentinelRulesVersion);
+        var massChange = new MassChangeDetector();
+        var ransomwareGuard = new RansomwareGuardService(log, massChange);
+        var defenderHealth = new DefenderHealthService(log);
+        var networkMonitor = new NetworkMonitorService(log);
         var sentinel = new SentinelService(
             log, fileIdentity, signatures, reputation, scannerHost,
-            autoruns, behaviourWatcher, trustStore, verdictCache);
+            autoruns, behaviourWatcher, trustStore, verdictCache,
+            ransomwareGuard, defenderHealth, networkMonitor);
 
         var tweakState = new TweakStateStore(paths);
         var registryApplier = new RegistryTweakApplier();

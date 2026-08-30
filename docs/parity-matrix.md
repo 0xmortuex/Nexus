@@ -114,8 +114,12 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Behaviour monitoring | ⚠️ | `BehaviorEngine` — masquerading, LOLBins, document-spawned shells, encoded command lines. WMI-polled, so very short-lived processes are missed |
 | Startup / persistence audit | ✅ | Run keys, startup folders, services, IFEO, Winlogon, AppInit_DLLs, WMI subscriptions, scheduled tasks |
 | Ransomware behaviour detection | ⚠️ | shadow-copy deletion, backup deletion and recovery-disabling are detected and reported — but reported only, after the fact |
-| Script / macro inspection (AMSI) | ❌ (not yet) | needs an AMSI provider DLL and an Authenticode certificate |
-| Archive / installer unpacking | ❌ (not yet) | overlay size is reported; contents are not extracted |
+| Script obfuscation analysis | ✅ | `ScriptAnalyzer`: PowerShell/batch/VBScript/JScript/HTA, UTF-16 aware |
+| Live script inspection (AMSI) | ❌ (not yet) | in-memory scripts need an AMSI provider DLL and an Authenticode certificate; files on disk are covered |
+| Archive inspection | ⚠️ | `ArchiveStaticEngine` reads ZIP contents with hard limits; nested archives are reported, not opened; 7z/RAR are not read |
+| Ransomware canaries + mass-change detection | ✅ | `RansomwareGuardService` + `MassChangeDetector` |
+| Network connection monitoring | ⚠️ | `NetworkMonitorService` via GetExtendedTcpTable — a snapshot, not a running record |
+| Antivirus health / exclusion auditing | ✅ | `DefenderHealthService` — reports on Defender rather than replacing it |
 | Rootkit scanning | ❌ (can't) | requires kernel visibility |
 | Email / web / phishing filtering | ❌ (won't) | suite bloat, not protection. The browser and mail client already do this better |
 | Firewall, VPN, password manager | ❌ (won't) | same |

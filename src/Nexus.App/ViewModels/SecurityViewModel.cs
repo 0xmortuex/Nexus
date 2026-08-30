@@ -50,6 +50,7 @@ public sealed class SecurityViewModel : ViewModelBase
     private readonly TrustStore _trust;
 
     private CancellationTokenSource? _scanCancellation;
+    private string _defenderStatus = "Checking Microsoft Defender…";
     private string _status = "Nexus watches, explains, and leaves the decisions to you. Nothing here is changed without you clicking it.";
     private bool _isScanning;
 
@@ -77,6 +78,10 @@ public sealed class SecurityViewModel : ViewModelBase
         TrustCommand = new RelayCommand(p => Trust(p as FindingRow));
         RestoreCommand = new RelayCommand(p => Restore(p as QuarantineRow));
         ClearFindingsCommand = new RelayCommand(() => _sentinel.ClearAlerts());
+        CheckDefenderCommand = new RelayCommand(CheckDefender);
+        CheckConnectionsCommand = new RelayCommand(CheckConnections);
+
+        RefreshDefenderStatus();
 
         RefreshQuarantine();
     }
@@ -106,6 +111,37 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand TrustCommand { get; }
     public RelayCommand RestoreCommand { get; }
     public RelayCommand ClearFindingsCommand { get; }
+    public RelayCommand CheckDefenderCommand { get; }
+    public RelayCommand CheckConnectionsCommand { get; }
+
+    /// <summary>Defender is the thing that actually blocks. Sentinel reports on it
+    /// rather than replacing it, so its state belongs at the top of this tab.</summary>
+    public string DefenderStatus
+    {
+        get => _defenderStatus;
+        private set => Set(ref _defenderStatus, value);
+    }
+
+    private void RefreshDefenderStatus() => DefenderStatus = _sentinel.DefenderSummary;
+
+    private void CheckDefender()
+    {
+        _sentinel.ReportDefenderHealth();
+        RefreshDefenderStatus();
+        Status = "Re-checked Microsoft Defender. Anything wrong with it is in the findings list.";
+        RefreshFindings();
+    }
+
+    private void CheckConnections()
+    {
+        int count = _sentinel.AuditConnections();
+
+        Status = $"{count} established connection(s) right now. Anything unusual is in the findings " +
+                 "list. This is a snapshot, not a running record — a connection that opens and closes " +
+                 "between checks will not appear.";
+
+        RefreshFindings();
+    }
 
     // ---- Scanning ----
 

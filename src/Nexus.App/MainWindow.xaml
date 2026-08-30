@@ -529,18 +529,38 @@
                         </StackPanel>
                     </Border>
 
+                    <GroupBox Header="Microsoft Defender — the part that actually blocks">
+                        <StackPanel>
+                            <TextBlock Text="{Binding DefenderStatus}" Style="{StaticResource DimText}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <Button Content="Re-check Defender" HorizontalAlignment="Left"
+                                    Command="{Binding CheckDefenderCommand}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Nexus checks whether real-time protection is on, whether definitions are current, and which folders and processes Defender has been told to ignore. Adding a broad exclusion is one of the first things an intruder does, and it is invisible unless you go looking. Nexus reports them; it does not change Defender's settings."/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Ransomware watch">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap"
+                                       Text="Nexus plants hidden tripwire files in your Documents, Pictures, Videos, Music and Desktop folders, and watches for the pattern an encryption run makes — many documents rewritten at once, everything renamed to one new extension, or a ransom note appearing. Nothing on your machine has a reason to touch a tripwire file, so anything that does gets you an immediate warning. Nexus will not stop the program: it cannot do that reliably without a kernel driver, and it would rather tell you clearly than half-block it."/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Scan">
                         <StackPanel>
                             <TextBlock Text="{Binding Status}" Style="{StaticResource DimText}"
                                        TextWrapping="Wrap" Margin="0,0,0,8"/>
                             <StackPanel Orientation="Horizontal">
-                                <TextBox x:Name="ScanFolderBox" Width="380" Margin="0,0,8,0"
+                                <TextBox x:Name="ScanFolderBox" Width="330" Margin="0,0,8,0"
                                          VerticalContentAlignment="Center"/>
                                 <Button Content="Scan folder" Margin="0,0,8,0"
                                         Command="{Binding ScanFolderCommand}"
                                         CommandParameter="{Binding Text, ElementName=ScanFolderBox}"/>
                                 <Button Content="Check startup items" Margin="0,0,8,0"
                                         Command="{Binding AuditStartupCommand}"/>
+                                <Button Content="Check connections" Margin="0,0,8,0"
+                                        Command="{Binding CheckConnectionsCommand}"/>
                                 <Button Content="Stop" Command="{Binding CancelScanCommand}"/>
                             </StackPanel>
                         </StackPanel>

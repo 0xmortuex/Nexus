@@ -50,8 +50,8 @@ Six signal sources feed one fusion step:
 | `CodeSignature` | Authenticode state via WinVerifyTrust |
 | `StaticRules` | PE structure heuristics, byte-pattern signatures |
 | `MachineLearning` | PE-feature classifier (not shipped — see Assets) |
-| `Behavior` | Process launches: ancestry, command lines, masquerading |
-| `Persistence` | Run keys, tasks, services, IFEO, WMI, Winlogon, AppInit |
+| `Behavior` | Process launches, ransomware-shaped file activity, live connections |
+| `Persistence` | Run keys, tasks, services, IFEO, WMI, Winlogon, AppInit, Defender health |
 
 Each signal carries a weight (Informational 0, Weak 8, Moderate 20, Strong 35,
 Decisive 100) and a plain-language explanation shown verbatim to the user.
@@ -68,6 +68,69 @@ Two rules shape the scoring, both aimed at not crying wolf:
 `Unknown` is a first-class verdict and is *not* an accusation. A file nobody could
 analyse comes back unknown rather than clean — engines that did not run are not
 counted toward coverage.
+
+## Ransomware watch
+
+Hidden canary files are planted in Documents, Pictures, Videos, Music and Desktop.
+Nothing on the machine knows they exist, so nothing legitimate opens them — anything
+that rewrites one is walking the filesystem indiscriminately, and that is worth
+interrupting the user for immediately.
+
+Alongside them, `MassChangeDetector` watches for the shape of an encryption run.
+The ordinary burst rule is deliberately conservative and cannot alert on its own,
+because backup tools, sync clients, game updaters and unzipping all produce bursts.
+The sharp evidence is the stuff with no innocent version: a canary touched, many
+files renamed to one new non-document extension, or a ransom-note filename appearing.
+
+Both hot-path tallies (distinct paths, extension counts) are maintained incrementally
+rather than recomputed. This code runs on every filesystem change on the machine, and
+the obvious implementations are quadratic exactly during the flood of events an
+encryption run produces — which is the worst possible moment to fall behind.
+
+It reports. It does not suspend or kill the process: that cannot be done reliably
+from user mode, and half-blocking an encryption run is worse than describing it
+clearly.
+
+## Reporting on Microsoft Defender
+
+Nexus cannot register as the system antivirus and should not try. What it does
+instead is watch the defence the machine actually relies on: whether real-time
+protection is on, whether definitions are current, whether tamper protection is
+enabled, and — most usefully — what has been excluded from scanning.
+
+Adding a broad exclusion is a standard early step for malware that intends to stay,
+it persists, and it is invisible unless you go looking. Nexus lists exclusions and
+flags the ones broad enough to be holes. It does not remove them: silently editing
+another security product's configuration is exactly the behaviour this module
+refuses to have.
+
+One subtlety worth knowing: `Get-MpPreference` substitutes a placeholder string for
+the exclusion lists when the caller is not elevated. Nexus detects that placeholder
+and reports "could not be read" rather than letting an unreadable list look like an
+empty one.
+
+## Scripts and archives
+
+`ScriptAnalyzer` reads PowerShell, batch, VBScript, JScript and HTA. Scripts are
+where most real intrusions execute, and unlike a compiled binary the evidence is in
+plain text — which is why interesting samples work so hard to stop being plain text.
+So the strongest signals are not "this calls something dangerous" but "this has been
+deliberately mangled": base64 payloads, character-code assembly, escape obfuscation,
+constructed code passed to `Invoke-Expression`.
+
+Two categories are graded harder than obfuscation because they have no innocent
+reading: turning off or carving holes in the machine's defences, and allocating
+executable memory to run bytes out of.
+
+UTF-16 is decoded properly. Reading a UTF-16 script as UTF-8 turns it into noise
+that every keyword check then silently misses.
+
+`ArchiveStaticEngine` looks inside ZIPs, because that is how most malware arrives and
+a scanner that stops at the container reports "unknown" on the files it most needs an
+opinion about. Every limit exists because the archive is attacker-controlled: entry
+count, total expansion, per-entry size, and compression ratio are all capped, path
+traversal entries are flagged, nothing is written to disk, and nested archives are
+reported rather than opened. Findings are rewritten to name the entry they came from.
 
 ## Process isolation
 
