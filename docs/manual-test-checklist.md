@@ -226,3 +226,57 @@ logic; everything below is the part that talks to the OS.
 - [ ] Trust a file, then modify its bytes → no longer trusted (trust is hash-keyed).
 - [ ] Leave the app idle overnight with monitoring on → no unbounded growth in the
       behaviour engine's process map (capped at 4096).
+
+## 9. Measurement and phase-2 detection
+
+### Latency measurement
+- [ ] "Capture baseline" completes in a few seconds and reports a median in the
+      sub-millisecond to low-millisecond range on an idle desktop.
+- [ ] "Measure and compare" immediately after, with nothing changed → **no measurable
+      difference**. If this reports an improvement on an unchanged system, the
+      comparison is broken and nothing else in this section can be trusted.
+- [ ] Set the power plan to Power Saver, then compare → a detectable regression.
+- [ ] Start a heavy background compile, then compare → a detectable regression.
+- [ ] "Stop" during a run leaves the previous baseline untouched.
+- [ ] Baselines survive an app restart.
+
+### Throttle detection
+- [ ] "Check CPU speed limits" on a desktop at defaults → reports running at rated speed.
+- [ ] Set the power plan's maximum processor state to 50% → reported as **caused by
+      the power plan** and described as fixable.
+- [ ] On a laptop under sustained load until it heats up → reported as firmware/thermal
+      and explicitly **not** fixable in software. Nexus must not imply it can raise it.
+
+### Ransomware watch
+- [ ] On first start, hidden tripwire files appear in Documents/Pictures/Desktop.
+- [ ] Delete one by hand → an alert appears, and the file is replanted.
+- [ ] Modify a tripwire file in a text editor → immediate alert, nothing is blocked.
+- [ ] Unzip a large archive of documents → **no** alert (burst rule alone must not fire).
+- [ ] Run a backup or sync of your Documents folder → **no** alert.
+- [ ] Rename 10+ documents to a `.locked` extension → alert naming that extension.
+- [ ] Create a file named `HOW_TO_DECRYPT.txt` → alert.
+- [ ] After an alert, further activity stays quiet for the 5-minute cooldown.
+- [ ] Copy several thousand files at once → the watcher survives the buffer overflow
+      and logs that events were dropped rather than dying silently.
+
+### Scripts and archives
+- [ ] Scan a real PowerShell module from a trusted vendor → no obfuscation findings.
+- [ ] Scan a UTF-16 encoded `.ps1` → keywords still detected (this is the case that
+      silently fails if decoding is wrong).
+- [ ] Scan a ZIP containing a script with `-EncodedCommand` → findings name the entry
+      inside the archive.
+- [ ] Scan a zip bomb (e.g. a highly compressible 1 GB file) → reported, and Nexus does
+      not allocate gigabytes or hang.
+- [ ] Scan a password-protected ZIP → does not crash; entries are skipped.
+
+### Defender health
+- [ ] Elevated: exclusions are listed. Non-elevated: reports that they could not be
+      read, **not** that there are none.
+- [ ] Add `Add-MpPreference -ExclusionPath C:\` then re-check → flagged as a broad
+      exclusion. Remove it afterwards.
+- [ ] Turn real-time protection off briefly → flagged as strong evidence. Turn it back on.
+
+### Network
+- [ ] "Check connections" returns a count close to `netstat -ano | find "ESTABLISHED"`.
+- [ ] Run a portable tool from `%TEMP%` that makes a connection → flagged.
+- [ ] Normal browsing produces no findings (it must not flag ordinary HTTPS).

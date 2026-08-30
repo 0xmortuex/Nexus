@@ -33,12 +33,21 @@ it instead of deciding for you.
   before anything is written, and per-tweak undo. Disable-only debloat
   (services + telemetry tasks), an Appx removal checklist (nothing pre-checked),
   a cache cleaner with size preview, and an enable/disable-only startup manager.
+- **Measure before trusting, made executable** — a latency probe that measures how
+  punctually Windows wakes a thread, saved baselines, and an A/B comparison that
+  uses a bootstrap confidence interval and is allowed to answer "no measurable
+  difference" — which, for most tweaks, is the truth. Plus throttle detection that
+  separates a ceiling your power plan is enforcing (fixable) from one the firmware
+  is enforcing because of heat or power delivery (not fixable, and it says so).
 - **Sentinel — security that reports, never decides** — on-demand file scanning,
   a startup/persistence audit (Run keys, tasks, services, IFEO, WMI subscriptions,
   Winlogon, AppInit_DLLs), Authenticode verification, PE structure heuristics,
   byte-pattern signatures, local hash reputation, and live behaviour monitoring
   (masquerading system binaries, living-off-the-land command lines, documents
-  spawning shells). Every finding shows its reasons and a score out of 100.
+  spawning shells), ransomware canaries with mass-change detection, script
+  obfuscation analysis, ZIP inspection, per-process network connections, and
+  Microsoft Defender health including exclusion auditing.
+  Every finding shows its reasons and a score out of 100.
   Nothing is ever blocked, moved or deleted without a click on that exact file.
   See `docs/sentinel.md`.
 - **UI** — dark WPF app with Dashboard, Processes, Game Mode, Tweaks, Security,
