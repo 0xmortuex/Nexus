@@ -515,6 +515,105 @@
             </ScrollViewer>
         </TabItem>
 
+        <!-- ================= Security (Sentinel) ================= -->
+        <TabItem Header="Security">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10" DataContext="{Binding Security}" MaxWidth="980" HorizontalAlignment="Left">
+
+                    <Border Background="#22304A" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="Nexus reports. It does not decide."
+                                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock TextWrapping="Wrap" Style="{StaticResource DimText}"
+                                       Text="Nothing here is blocked, deleted or quarantined unless you click the button for that exact file. Every finding shows the reasons behind it and a score out of 100, so you can disagree with it. Keep Microsoft Defender switched on — this is a second opinion, not a replacement."/>
+                        </StackPanel>
+                    </Border>
+
+                    <GroupBox Header="Scan">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Status}" Style="{StaticResource DimText}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox x:Name="ScanFolderBox" Width="380" Margin="0,0,8,0"
+                                         VerticalContentAlignment="Center"/>
+                                <Button Content="Scan folder" Margin="0,0,8,0"
+                                        Command="{Binding ScanFolderCommand}"
+                                        CommandParameter="{Binding Text, ElementName=ScanFolderBox}"/>
+                                <Button Content="Check startup items" Margin="0,0,8,0"
+                                        Command="{Binding AuditStartupCommand}"/>
+                                <Button Content="Stop" Command="{Binding CancelScanCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Findings">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="Clear list" Command="{Binding ClearFindingsCommand}"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Findings}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#3A4256" BorderThickness="0,0,0,1" Padding="0,6">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                        <Button Content="Trust" Width="70" Margin="0,0,6,0"
+                                                                Command="{Binding DataContext.TrustCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Content="Quarantine" Width="90"
+                                                                IsEnabled="{Binding CanQuarantine}"
+                                                                Command="{Binding DataContext.QuarantineCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Width="150" Text="{Binding Level}" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Width="60" VerticalAlignment="Center"
+                                                               Text="{Binding Score, StringFormat={}{0}/100}"/>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center"/>
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding Location}" Style="{StaticResource DimText}"
+                                                           TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                                <TextBlock Text="{Binding Reasons}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                                <TextBlock Style="{StaticResource DimText}" Margin="0,2,0,0"
+                                                           Text="{Binding Origin, StringFormat=found by: {0}}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Quarantine">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Quarantined files are moved, never deleted, and every move is journalled before it happens so a crash cannot lose one. Put anything back with one click."/>
+                            <ItemsControl ItemsSource="{Binding Quarantined}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,3">
+                                            <Button DockPanel.Dock="Right" Content="Put back" Width="80"
+                                                    Command="{Binding DataContext.RestoreCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <TextBlock Width="180" Text="{Binding Name}" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Width="120" Text="{Binding When}" VerticalAlignment="Center"
+                                                       Style="{StaticResource DimText}"/>
+                                            <TextBlock Text="{Binding Reason}" Style="{StaticResource DimText}"
+                                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
         <!-- ================= Latency & Hardware ================= -->
         <TabItem Header="Latency &amp; Hardware"
                  Visibility="{Binding IsAdvanced, Converter={StaticResource BoolToVisibility}}">

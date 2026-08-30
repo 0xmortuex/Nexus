@@ -1,18 +1,27 @@
 using System.Windows;
 using Nexus.App.Interop;
+using Nexus.App.Interop.Security;
 using Nexus.App.Services;
+using Nexus.App.Services.Security;
 using Nexus.App.TweaksImpl;
 using Nexus.App.ViewModels;
 using Nexus.Core.GameMode;
 using Nexus.Core.Logging;
 using Nexus.Core.Persistence;
 using Nexus.Core.Rules;
+using Nexus.Core.Security;
+using Nexus.Core.Security.Behavior;
 using Nexus.Core.Tweaks;
 
 namespace Nexus.App;
 
 public partial class App : System.Windows.Application
 {
+    /// <summary>Stamped into the verdict cache. Bump this whenever a detection rule,
+    /// heuristic weight, or pattern file changes, so cached conclusions from the old
+    /// logic are discarded instead of suppressing a new detection.</summary>
+    private const string SentinelRulesVersion = "sentinel-1";
+
     private Mutex? _singleInstanceMutex;
     private ActivityLog? _log;
     private MainWindow? _window;
@@ -79,6 +88,24 @@ public partial class App : System.Windows.Application
         var recovery = new CrashRecoveryService(journal, api, power, log);
         idleSaver.IsSuppressed = () => gameMode.IsActive;
 
+        // ---- Sentinel: the advisory security module ----
+        // Constructed after the optimizer engines because it observes them (it audits
+        // Nexus's own IFEO keys and scheduled task) rather than being exempt from them.
+        var signatures = new AuthenticodeVerifier(log);
+        var fileIdentity = new FileIdentityService(log);
+        var reputation = new ReputationService(log);
+        var scannerHost = new ScannerHost(log);
+        var autoruns = new AutorunEnumerator(log, signatures);
+        var behaviorEngine = new BehaviorEngine();
+        var behaviourWatcher = new ProcessDetailWatcher(log, behaviorEngine);
+        var trustStore = new TrustStore(paths);
+        var quarantineJournal = new QuarantineJournal(paths);
+        var quarantine = new QuarantineService(quarantineJournal, paths, log);
+        var verdictCache = new VerdictCache(paths, SentinelRulesVersion);
+        var sentinel = new SentinelService(
+            log, fileIdentity, signatures, reputation, scannerHost,
+            autoruns, behaviourWatcher, trustStore, verdictCache);
+
         var tweakState = new TweakStateStore(paths);
         var registryApplier = new RegistryTweakApplier();
         var backup = new BackupService(paths, log);
@@ -94,10 +121,11 @@ public partial class App : System.Windows.Application
 
         _disposables.AddRange([watcher, ruleApplication, proBalance, enforcement,
             idleSaver, smartTrim, keepAwake, standby, foreground, gameMode,
-            foregroundBoost, lifecycle, limiter, balancer, timerResolution]);
+            foregroundBoost, lifecycle, limiter, balancer, timerResolution, sentinel]);
 
         // ---- Crash recovery BEFORE any engine starts mutating ----
         recovery.RecoverIfNeeded();
+        quarantine.ReconcileOnStartup();
 
         // ---- Start engines ----
         watcher.Start();
@@ -113,6 +141,7 @@ public partial class App : System.Windows.Application
         lifecycle.Start();
         balancer.Start();
         timerResolution.Start();
+        sentinel.Start();
 
         // ---- UI ----
         var mainViewModel = new MainViewModel(settings)
@@ -123,6 +152,7 @@ public partial class App : System.Windows.Application
             GameMode = new GameModeViewModel(gameMode, games, settings, topology.Topology.IsHybrid),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
+            Security = new SecurityViewModel(sentinel, quarantine, quarantineJournal, trustStore),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),
