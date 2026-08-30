@@ -253,6 +253,21 @@ have it. Nexus itself runs elevated, so these steps close that gap.
 - [ ] Exit Nexus normally and confirm `logman query -ets` no longer lists it. An ETW
       session outlives the process that made it, so a leak here is a real one.
 
+## 8a2. Network record
+
+- [ ] With protection on for a minute or two, Security → Network record → "Show what
+      has connected" lists processes and endpoints, most recently active first.
+- [ ] The same program talking to the same endpoint appears **once**, not once per
+      socket, and "seen N times" grows by one per ten seconds rather than in jumps.
+- [ ] Open a browser tab, wait, close it. The endpoint stays in the list afterwards —
+      that is the whole point; a snapshot would have lost it.
+- [ ] "Clear" empties the list.
+- [ ] Turn protection off: sampling stops (the list stops growing). Turn it back on:
+      it resumes.
+- [ ] Restart Nexus. The list is empty again — this is deliberate, nothing about where
+      the machine has been is written to disk. Confirm no file under `%APPDATA%\Nexus`
+      contains a remote address.
+
 ## 8b. Scan modes and the things that produce false positives
 
 The point of this section is the *absence* of findings. Every check here was a real

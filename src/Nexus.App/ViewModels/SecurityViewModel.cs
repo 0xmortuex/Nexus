@@ -101,6 +101,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public ObservableCollection<ExclusionRow> Exclusions { get; } = [];
     public ObservableCollection<ScanRun> History { get; } = [];
     public ObservableCollection<ExtensionRow> Extensions { get; } = [];
+    public ObservableCollection<ConnectionRecord> ConnectionLog { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -149,6 +150,8 @@ public sealed class SecurityViewModel : ViewModelBase
         AuditPostureCommand = new RelayCommand(AuditPosture);
         AuditExtensionsCommand = new RelayCommand(AuditExtensions);
         ScanRunningCommand = new RelayCommand(async _ => await ScanRunningAsync(), _ => !IsScanning);
+        RefreshConnectionLogCommand = new RelayCommand(RefreshConnectionLog);
+        ClearConnectionLogCommand = new RelayCommand(() => { _sentinel.Connections.Clear(); RefreshConnectionLog(); });
         FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
         SaveReportCommand = new RelayCommand(SaveReport);
         ClearHistoryCommand = new RelayCommand(() => { _history.Clear(); RefreshHistory(); });
@@ -207,6 +210,8 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand AuditPostureCommand { get; }
     public RelayCommand AuditExtensionsCommand { get; }
     public RelayCommand ScanRunningCommand { get; }
+    public RelayCommand RefreshConnectionLogCommand { get; }
+    public RelayCommand ClearConnectionLogCommand { get; }
     public RelayCommand FullScanCommand { get; }
     public RelayCommand SaveReportCommand { get; }
     public RelayCommand ClearHistoryCommand { get; }
@@ -704,6 +709,36 @@ public sealed class SecurityViewModel : ViewModelBase
             RefreshFindings();
             RefreshHistory();
         }
+    }
+
+    // ---- Network record ----
+
+    /// <summary>True while nothing has been observed, so the panel explains itself
+    /// rather than showing an empty box that could mean anything.</summary>
+    public bool NoConnectionsSeen => ConnectionLog.Count == 0;
+
+    /// <summary>
+    /// Show what has been seen talking to the network this session.
+    ///
+    /// This is a record rather than a snapshot: the connection table is sampled while
+    /// protection is on, so something that connected for four seconds an hour ago is
+    /// still listed. Pressing a button would never have caught it.
+    /// </summary>
+    private void RefreshConnectionLog()
+    {
+        var records = _sentinel.Connections.All;
+
+        ConnectionLog.Clear();
+        foreach (var record in records.Take(200))
+            ConnectionLog.Add(record);
+
+        OnPropertyChanged(nameof(NoConnectionsSeen));
+
+        Status = records.Count == 0
+            ? "Nothing has been seen talking to the network yet. Sampling runs while protection is on."
+            : $"{records.Count} connection(s) seen this session. This is kept in memory only " +
+              "and is gone when Nexus closes — Nexus does not keep a record of where your " +
+              "machine has been.";
     }
 
     // ---- Browser extensions ----

@@ -702,6 +702,40 @@
                         </StackPanel>
                     </GroupBox>
 
+                    <GroupBox Header="Network record">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Windows can only say what is connected at this instant, so anything that connects briefly and disconnects would never be seen. While protection is on, Nexus samples every ten seconds and keeps what it saw. This is held in memory only — it is gone when Nexus closes, and never written to disk."/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="Show what has connected" Margin="0,0,8,0"
+                                        Command="{Binding RefreshConnectionLogCommand}"/>
+                                <Button Content="Clear" Command="{Binding ClearConnectionLogCommand}"/>
+                            </StackPanel>
+
+                            <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,6"
+                                       Text="Nothing recorded yet."
+                                       Visibility="{Binding NoConnectionsSeen, Converter={StaticResource BoolToVisibility}}"/>
+
+                            <ItemsControl ItemsSource="{Binding ConnectionLog}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#3A4256" BorderThickness="0,0,0,1" Padding="0,5">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding When}"
+                                                           Style="{StaticResource DimText}" Margin="8,0,0,0"/>
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding ProcessName}"
+                                                           Width="170" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Endpoint}" Style="{StaticResource DimText}"
+                                                           TextWrapping="Wrap"/>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Browser extensions">
                         <StackPanel>
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"

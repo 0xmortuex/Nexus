@@ -227,6 +227,34 @@ never fired for the operating system, and every scan of a Windows folder reporte
 thousands of files as unsigned. A scan of System32 (5,452 files) now produces no
 findings at all.
 
+## Watching the network
+
+`GetExtendedTcpTable` answers "what is connected right now". A connection that opens
+and closes between two looks therefore never happened, as far as Nexus is concerned,
+and a great deal of what is worth seeing is exactly that short: a beacon checking in,
+a downloader fetching a payload. Pressing a button in the UI was never going to catch
+one.
+
+So while protection is on, the table is sampled every ten seconds and the results are
+kept. The call is a kernel table copy rather than a scan, which is what makes that
+affordable to run all day. The rules themselves did not change — a program running
+from a temp folder while connected was always worth reporting — but sampling is what
+gives them a chance to fire.
+
+Findings are identified by a hash of their own content rather than by a fixed name.
+Without that, the first network finding of the session would have deduplicated every
+later one out of existence, because they would all have shared an identity.
+
+**Held in memory only.** Writing every address this machine has contacted into a file
+would build a browsing history on the user's disk, and creating that record is a
+bigger risk to them than the one it helps with. It lives as long as the session.
+
+One thing measurement corrected here: a program commonly holds several simultaneous
+sockets to the same endpoint, and counting each row as a sighting made the "seen N
+times" figure meaningless — six samples of a browser reported it as seen 156 times,
+which reads as persistence and is really parallelism. Sightings are counted per
+sample.
+
 ## Watching processes start
 
 Behaviour monitoring is fed by an ETW kernel session, and falls back to a WMI watcher

@@ -57,6 +57,8 @@ public sealed class SentinelService : IDisposable
     private readonly SecurityPostureService _posture;
     private readonly BrowserExtensionService _extensions;
     private readonly EtwProcessWatcher _etw;
+    private readonly ConnectionHistory _connections = new();
+    private System.Threading.Timer? _connectionPoll;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
     public const int MaxAlerts = 500;
@@ -165,6 +167,7 @@ public sealed class SentinelService : IDisposable
         TryStart("stopping the ransomware watch", _ransomware.Stop);
         TryStart("stopping download checks", _downloads.Stop);
         TryStart("stopping USB drive checks", _removableDrives.Stop);
+        TryStart("stopping the network watch", StopConnectionPolling);
 
         IsProtectionOn = false;
         _log.Warn("Sentinel",
@@ -203,6 +206,8 @@ public sealed class SentinelService : IDisposable
 
         if (options.ScanRemovableDrives)
             TryStart("USB drive checks", _removableDrives.Start);
+
+        TryStart("the network watch", StartConnectionPolling);
 
         if (options.CheckDefenderHealth)
             TryStart("the Defender health check", ReportDefenderHealth);
@@ -1025,6 +1030,85 @@ public sealed class SentinelService : IDisposable
 
     // ---- Network ----
 
+    /// <summary>
+    /// How often to sample the connection table.
+    ///
+    /// GetExtendedTcpTable answers "what is connected right now", so a connection that
+    /// opens and closes between two looks never happened as far as Nexus is concerned
+    /// — and a beacon checking in is exactly that short. Ten seconds is frequent
+    /// enough to catch most of them and cheap enough to run all day: the call is a
+    /// kernel table copy, not a scan.
+    /// </summary>
+    private static readonly TimeSpan ConnectionPollInterval = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Everything seen talking to the network this session.
+    ///
+    /// In memory only. Writing every address this machine has contacted to a file
+    /// would build a browsing history on the user's disk, and creating that record is
+    /// a bigger risk to them than the one it helps with.
+    /// </summary>
+    public ConnectionHistory Connections => _connections;
+
+    private void StartConnectionPolling()
+    {
+        _connectionPoll = new System.Threading.Timer(
+            _ => PollConnections(), null, TimeSpan.Zero, ConnectionPollInterval);
+    }
+
+    private void StopConnectionPolling()
+    {
+        _connectionPoll?.Dispose();
+        _connectionPoll = null;
+    }
+
+    /// <summary>
+    /// Sample the connection table, fold it into the history, and report anything the
+    /// per-snapshot rules object to.
+    ///
+    /// The rules themselves are unchanged; polling is what gives them a chance to
+    /// fire. A program running from a temp folder that connects for four seconds was
+    /// always worth reporting, and pressing a button in the UI was never going to
+    /// catch it.
+    /// </summary>
+    private void PollConnections()
+    {
+        // Runs on a timer thread, where an escaping exception ends the process.
+        try
+        {
+            var connections = _network.GetConnections();
+
+            _connections.Record(
+                connections.Select(c => new ConnectionObservation(c.ProcessName, c.RemoteAddress, c.RemotePort)),
+                DateTimeOffset.Now);
+
+            var signals = _network.Evaluate(connections, ResolveImagePath);
+            if (signals.Count == 0)
+                return;
+
+            // Report deduplicates on the target's identity, and identity prefers the
+            // hash over the path. Deriving that hash from the findings themselves is
+            // what makes this poll safe to run every ten seconds: the same connection
+            // seen 360 times in an hour is reported once, while a genuinely different
+            // one gets a different identity and is not swallowed as a repeat. A
+            // constant target here would have silently hidden every finding after the
+            // first.
+            var verdict = VerdictEngine.Evaluate(new VerdictInput
+            {
+                Target = ScanTarget.ForFile("Network connections", FindingIdentity(signals)),
+                Signals = signals,
+                EnginesConsulted = new HashSet<SignalSource> { SignalSource.Behavior },
+            }, DateTimeOffset.Now);
+
+            if (verdict.WarrantsAlert)
+                Report(verdict, origin: "network watch");
+        }
+        catch (Exception ex)
+        {
+            _log.Info("Sentinel", $"Skipped a network check: {ex.Message}");
+        }
+    }
+
     /// <summary>Who is talking to the internet right now.</summary>
     public IReadOnlyList<ConnectionInfo> GetConnections() => _network.GetConnections();
 
@@ -1063,6 +1147,20 @@ public sealed class SentinelService : IDisposable
         return connections.Count;
     }
 
+    /// <summary>
+    /// A stable identity for one set of network findings, so repeats deduplicate and
+    /// genuinely new findings do not.
+    /// </summary>
+    private static string FindingIdentity(IReadOnlyList<SecuritySignal> signals)
+    {
+        var material = string.Join("\n", signals
+            .Select(signal => signal.Code + ":" + signal.Explanation)
+            .OrderBy(text => text, StringComparer.Ordinal));
+
+        return Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
+    }
+
     private static string? ResolveImagePath(int pid)
     {
         try
@@ -1071,8 +1169,9 @@ public sealed class SentinelService : IDisposable
             return process.MainModule?.FileName;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException
-                                       or System.ComponentModel.Win32Exception)
+                                       or System.ComponentModel.Win32Exception or NotSupportedException)
         {
+            // Gone, or protected. Not knowing is not evidence.
             return null;
         }
     }

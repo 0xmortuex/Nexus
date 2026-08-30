@@ -123,7 +123,7 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Live script inspection (AMSI) | ❌ (not yet) | in-memory scripts need an AMSI provider DLL and an Authenticode certificate; files on disk are covered |
 | Archive inspection | ⚠️ | ZIP, 7z, RAR, tar, gzip, bzip2 and xz, detected by magic bytes and read under shared limits. Nested archives are reported, not opened; password-protected ones are reported as such rather than as clean |
 | Ransomware canaries + mass-change detection | ✅ | `RansomwareGuardService` + `MassChangeDetector` |
-| Network connection monitoring | ⚠️ | `NetworkMonitorService` via GetExtendedTcpTable — a snapshot, not a running record |
+| Network connection monitoring | ✅ | `NetworkMonitorService` via GetExtendedTcpTable, sampled every 10s into a `ConnectionHistory` while protection is on, so a connection that opens and closes between looks is still recorded. Kept in memory only |
 | Antivirus health / exclusion auditing | ✅ | `DefenderHealthService` — reports on Defender rather than replacing it. Nexus audits its own exclusions to the same standard |
 | Security posture check (firewall, UAC, SmartScreen) | ✅ | `SecurityPostureAudit` — also Secure Boot, drive encryption and update age. "Could not read" is never reported as "switched off" |
 | Browser extension auditing | ⚠️ | `BrowserExtensionAudit` over Chrome, Edge, Brave, Vivaldi and Opera, with capabilities in plain language. Firefox stores extensions differently and is not read |
