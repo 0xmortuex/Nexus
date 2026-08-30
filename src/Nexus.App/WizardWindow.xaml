@@ -146,6 +146,25 @@
                     <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,0"
                                Text="Looks at programs and archives landing in your Downloads folder, and stays quiet unless there is something worth saying."/>
 
+                    <Border Background="#22304A" CornerRadius="4" Padding="10" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Set it up properly while you are here"
+                                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                       Text="Without these, Nexus can only ever say &quot;unknown&quot; about a file — it has nothing to compare against. Both are free, both are optional, and both happen on the next step."/>
+
+                            <CheckBox Content="Learn what is normal on this PC (recommended)"
+                                      IsChecked="{Binding BuildBaselineNow}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,10"
+                                       Text="Records every program on this PC that Windows already trusts, so those stop being reported as unknown. Reads about 30,000 files and takes two to five minutes. Nothing leaves your computer."/>
+
+                            <CheckBox Content="Download the list of known malware (recommended)"
+                                      IsChecked="{Binding DownloadHashListNow}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,0"
+                                       Text="A public list from abuse.ch, about 42 MB, no account needed. It lets Nexus recognise known malware outright instead of guessing. This is the only time Nexus uses the internet, and it only downloads — nothing about your files is ever sent anywhere."/>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,12,0,0"
                                Text="You can change any of this later in Settings, and Restore Defaults removes the tripwire files and puts back anything ever quarantined."/>
                 </StackPanel>
@@ -154,6 +173,19 @@
                 <StackPanel Visibility="{Binding IsApply, Converter={StaticResource BoolToVisibility}}">
                     <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap"
                                Text="Click Next to apply the optimizations you left checked. A System Restore point and per-key registry backups are taken first, and each change remains individually reversible."/>
+                    <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Text="If you left the security options ticked, Nexus will also learn what is normal on this PC and download the malware list. That part can take a few minutes — the progress is shown below, and it is safe to leave it running."/>
+
+                    <Border Margin="0,14,0,0" Padding="12" CornerRadius="4"
+                            Background="{StaticResource PanelAltBrush}"
+                            Visibility="{Binding IsWorking, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="Working…" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ApplyProgress}" Style="{StaticResource DimText}"
+                                       TextWrapping="Wrap" Margin="0,4,0,8"/>
+                            <ProgressBar IsIndeterminate="True" Height="4"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- Finish -->
@@ -187,7 +219,8 @@
         <!-- Footer -->
         <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="24,12">
             <DockPanel>
-                <Button DockPanel.Dock="Left" Content="Back" Width="90" Command="{Binding BackCommand}"/>
+                <Button DockPanel.Dock="Left" Content="Back" Width="90" Command="{Binding BackCommand}"
+                        IsEnabled="{Binding IsNotWorking}"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="Next" Width="110" Command="{Binding NextCommand}"
                             Visibility="{Binding IsLastStep, Converter={StaticResource InverseBoolToVisibility}}"/>

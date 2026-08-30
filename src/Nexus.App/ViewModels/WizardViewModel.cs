@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Nexus.App.Services;
+using Nexus.App.Services.Security;
 using Nexus.Core.Persistence;
 using Nexus.Core.Advisor;
 using Nexus.Core.Suggestions;
@@ -64,7 +65,12 @@ public sealed class WizardViewModel : ViewModelBase
     private readonly RatingService _rating;
     private readonly Func<IReadOnlyList<GameRating>> _games;
     private readonly SettingsService _settings;
+    private readonly KnownGoodBaselineService _baseline;
+    private readonly HashFeedImportService _feeds;
     private readonly Action _onFinished;
+
+    private bool _isWorking;
+    private string _applyProgress = "";
 
     public ObservableCollection<WizardRecommendationRow> Recommendations { get; } = [];
     public ObservableCollection<WizardGameRow> Games { get; } = [];
@@ -76,15 +82,19 @@ public sealed class WizardViewModel : ViewModelBase
         RatingService rating,
         Func<IReadOnlyList<GameRating>> games,
         SettingsService settings,
+        KnownGoodBaselineService baseline,
+        HashFeedImportService feeds,
         Action onFinished)
     {
         _suggestions = suggestions;
         _rating = rating;
         _games = games;
         _settings = settings;
+        _baseline = baseline;
+        _feeds = feeds;
         _onFinished = onFinished;
 
-        NextCommand = new RelayCommand(Next, () => !IsLastStep);
+        NextCommand = new RelayCommand(async () => await NextAsync(), () => !IsLastStep && !IsWorking);
         BackCommand = new RelayCommand(Back, () => WizardModel.Previous(_step) is not null);
         FinishCommand = new RelayCommand(Finish);
 
@@ -145,16 +155,68 @@ public sealed class WizardViewModel : ViewModelBase
     /// <summary>Raised when the wizard should close (Finish or the window's own close).</summary>
     public event Action? CloseRequested;
 
-    private void Next()
+    private async Task NextAsync()
     {
         if (_step == WizardStepId.Apply)
-            ApplyChoices();
+            await ApplyChoicesAsync();
+
         if (WizardModel.Next(_step) is { } next)
         {
             _step = next;
             LoadStepData();
             RaiseStepChanged();
         }
+    }
+
+    /// <summary>True while Apply is working, so the buttons cannot be double-clicked
+    /// into running the setup twice.</summary>
+    public bool IsWorking
+    {
+        get => _isWorking;
+        private set
+        {
+            if (!Set(ref _isWorking, value))
+                return;
+
+            OnPropertyChanged(nameof(IsNotWorking));
+
+            // RelayCommand re-queries on UI input events, which do not happen while an
+            // async step is running — so Next would stay clickable through a two-minute
+            // baseline build and a second click would start it again.
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    public bool IsNotWorking => !_isWorking;
+
+    /// <summary>Live progress during Apply. Building the baseline reads tens of
+    /// thousands of files, and a wizard that appears frozen for two minutes is one
+    /// people force-quit.</summary>
+    public string ApplyProgress
+    {
+        get => _applyProgress;
+        private set => Set(ref _applyProgress, value);
+    }
+
+    // ---- Security setup, done during Apply rather than left as homework ----
+    //
+    // Without a known-good baseline Nexus cannot report anything as "clean" — every
+    // ordinary file comes back "unknown". Expecting a new user to know that, find the
+    // Security tab and press the right button is how a feature goes unused. The
+    // wizard offers to do it here, where the user is already saying yes to things.
+
+    private bool _buildBaseline = true;
+    public bool BuildBaselineNow
+    {
+        get => _buildBaseline;
+        set => Set(ref _buildBaseline, value);
+    }
+
+    private bool _downloadHashList = true;
+    public bool DownloadHashListNow
+    {
+        get => _downloadHashList;
+        set => Set(ref _downloadHashList, value);
     }
 
     private void Back()
@@ -181,23 +243,89 @@ public sealed class WizardViewModel : ViewModelBase
         }
     }
 
-    private void ApplyChoices()
+    private async Task ApplyChoicesAsync()
     {
-        int applied = 0, failed = 0;
-        foreach (var row in Recommendations.Where(r => r.Checked && r.Actionable))
+        IsWorking = true;
+
+        try
         {
-            if (_suggestions.Apply(row.Suggestion, out _))
-                applied++;
-            else
-                failed++;
+            ApplyProgress = "Applying the optimizations you chose…";
+
+            int applied = 0, failed = 0;
+            foreach (var row in Recommendations.Where(r => r.Checked && r.Actionable))
+            {
+                if (_suggestions.Apply(row.Suggestion, out _))
+                    applied++;
+                else
+                    failed++;
+            }
+
+            AfterScore = _rating.RateSystem().Score;
+
+            var summary = failed == 0
+                ? $"Applied {applied} optimization(s). Everything is reversible from its tab or Restore Defaults."
+                : $"Applied {applied}; {failed} could not be applied (see the Log tab).";
+
+            summary += await SetUpSecurityAsync();
+
+            ApplySummary = summary;
+            ApplyProgress = "";
+
+            OnPropertyChanged(nameof(AfterScore));
+            OnPropertyChanged(nameof(AfterGrade));
+            OnPropertyChanged(nameof(ApplySummary));
         }
-        AfterScore = _rating.RateSystem().Score;
-        ApplySummary = failed == 0
-            ? $"Applied {applied} optimization(s). Everything is reversible from its tab or Restore Defaults."
-            : $"Applied {applied}; {failed} could not be applied (see the Log tab).";
-        OnPropertyChanged(nameof(AfterScore));
-        OnPropertyChanged(nameof(AfterGrade));
-        OnPropertyChanged(nameof(ApplySummary));
+        finally
+        {
+            IsWorking = false;
+        }
+    }
+
+    /// <summary>Do the security setup the user agreed to, and report what happened in
+    /// the same sentence as everything else.</summary>
+    private async Task<string> SetUpSecurityAsync()
+    {
+        var notes = new List<string>();
+
+        if (BuildBaselineNow)
+        {
+            try
+            {
+                var progress = new Progress<string>(message => ApplyProgress = message);
+                var result = await _baseline.BuildAsync(progress);
+
+                notes.Add(result.HashCount > 0
+                    ? $"recorded {result.HashCount:N0} known-good files on this PC"
+                    : "could not record any known-good files");
+            }
+            catch (Exception ex)
+            {
+                // The wizard must finish even if this does not. A failed optional step
+                // is a note, not a dead end.
+                notes.Add($"the known-good baseline failed ({ex.Message})");
+            }
+        }
+
+        if (DownloadHashListNow)
+        {
+            try
+            {
+                ApplyProgress = "Downloading the malware hash list…";
+                var result = await _feeds.ImportAsync(HashFeedImportService.DefaultFeedUrl);
+
+                notes.Add(result.Succeeded
+                    ? $"downloaded {result.HashCount:N0} known-bad hashes"
+                    : "could not download the malware hash list");
+            }
+            catch (Exception ex)
+            {
+                notes.Add($"the hash list download failed ({ex.Message})");
+            }
+        }
+
+        return notes.Count == 0
+            ? ""
+            : " Security setup: " + string.Join("; ", notes) + ".";
     }
 
     private void Finish()

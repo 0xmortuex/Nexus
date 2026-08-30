@@ -239,7 +239,8 @@ public partial class App : System.Windows.Application
 
         _showWizard = () =>
         {
-            var wizardVm = new WizardViewModel(suggestions, rating, rating.RateGames, settings, () =>
+            var wizardVm = new WizardViewModel(
+                suggestions, rating, rating.RateGames, settings, baselineBuilder, hashFeeds, () =>
             {
                 settings.Update(s => s with { WizardCompleted = true });
                 mainViewModel.Dashboard.RefreshRating();
