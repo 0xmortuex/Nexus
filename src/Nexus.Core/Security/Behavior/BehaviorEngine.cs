@@ -149,6 +149,15 @@ public sealed class BehaviorEngine
         if (!BehaviorCatalog.SystemImageHomes.TryGetValue(evt.ImageName, out var expectedHome))
             return;
 
+        // Nexus cannot always read a process's image path — protected processes and
+        // anything at a higher integrity level refuse. An empty path means "we do not
+        // know", and treating that as "not in System32" turns a permission failure
+        // into Strong evidence of malware. On a real machine this reported conhost.exe
+        // as masquerading, with the directory left blank in the message because there
+        // was never a directory to print.
+        if (evt.ImagePath.Length == 0)
+            return;
+
         // SysWOW64 is the legitimate 32-bit twin of System32.
         bool atHome = PathHelpers.IsUnder(evt.ImagePath, expectedHome)
                       || (expectedHome.EndsWith("System32", StringComparison.OrdinalIgnoreCase)
@@ -243,7 +252,10 @@ public sealed class BehaviorEngine
                 "command line, which hides what it was actually told to do."));
         }
 
-        if (evt.CommandLine.Length > 2000)
+        // 2000 was far too low. The Windows limit is 32767 and build tools live near
+        // it: compilers with long include lists, linkers, node, java, msbuild. On a
+        // real machine this fired on an ordinary 3762-character shell invocation.
+        if (evt.CommandLine.Length > 8000)
         {
             signals.Add(new SecuritySignal(
                 SignalSource.Behavior,
@@ -284,9 +296,26 @@ public sealed class BehaviorEngine
     /// </summary>
     public static bool LooksBase64Encoded(string commandLine, out int blobLength)
     {
-        const int minimumBlob = 40;
-        blobLength = 0;
+        // 40 characters of [A-Za-z0-9] is not rare: a git commit hash is exactly 40,
+        // and content-addressed asset names are the same shape. Requiring a longer run
+        // *and* a genuine mix of character classes separates encoded payloads from
+        // hashes and identifiers, because base64 of UTF-16LE text always carries upper,
+        // lower and digits, while hashes are lowercase hex and identifiers have no
+        // digits at all.
+        const int minimumBlob = 50;
+
+        int longest = 0;
         int run = 0;
+        bool upper = false, lower = false, other = false;
+
+        void EndRun()
+        {
+            if (run >= minimumBlob && upper && lower && other && run > longest)
+                longest = run;
+
+            run = 0;
+            upper = lower = other = false;
+        }
 
         foreach (char c in commandLine)
         {
@@ -294,16 +323,20 @@ public sealed class BehaviorEngine
             if (isBase64Char)
             {
                 run++;
-                if (run > blobLength)
-                    blobLength = run;
+                if (char.IsAsciiLetterUpper(c)) upper = true;
+                else if (char.IsAsciiLetterLower(c)) lower = true;
+                else other = true;
             }
             else
             {
-                run = 0;
+                EndRun();
             }
         }
 
-        return blobLength >= minimumBlob;
+        EndRun(); // a blob that runs to the end of the command line still counts
+
+        blobLength = longest;
+        return longest > 0;
     }
 
     /// <summary>Detects "invoice.pdf.exe" — a document extension followed by an

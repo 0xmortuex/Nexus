@@ -44,10 +44,48 @@ public class FalsePositiveRegressionTests
 
         // Minifiers produce exactly the surface those rules were written to catch —
         // single-character names, no whitespace, string indexing — but they do it to
-        // every web bundle on earth.
-        Assert.DoesNotContain("script-obfuscated", codes);
-        Assert.DoesNotContain("script-encoded-payload", codes);
-        Assert.Contains("script-minified-bundle", codes);
+        // every web bundle on earth. Whatever is noticed here must be worth nothing.
+        Assert.All(ScriptAnalyzer.Analyse(MinifiedJQuery, ScriptKind.JavaScript),
+            s => Assert.Equal(0, s.Points));
+
+        Assert.DoesNotContain("script-windows-script-host", codes);
+    }
+
+    /// <summary>
+    /// core-js writes <c>new ActiveXObject("htmlfile")</c> and every pre-2015 XHR
+    /// shim asks for MSXML2.XMLHTTP. Those two strings were the entire remaining
+    /// cause of false positives once the obfuscation rules were dealt with: eight
+    /// files in one Next.js project, all of them polyfills.
+    /// </summary>
+    [Fact]
+    public void An_internet_explorer_polyfill_is_not_a_windows_script_host_dropper()
+    {
+        const string polyfill =
+            @"var f=function(){try{r=new ActiveXObject(""htmlfile"")}catch(t){}};" +
+            @"var u=!i.ActiveXObject&&""ActiveXObject""in i;" +
+            @"function x(){return new ActiveXObject(""MSXML2.XMLHTTP"")}";
+
+        var signals = ScriptAnalyzer.Analyse(polyfill, ScriptKind.JavaScript);
+
+        Assert.DoesNotContain("script-windows-script-host", signals.Select(s => s.Code));
+        Assert.All(signals, s => Assert.Equal(0, s.Points));
+    }
+
+    /// <summary>
+    /// typescript.js is a compiler: it calls String.fromCharCode on nearly every
+    /// line, because that is what a lexer does. It was scored 57/100. Nothing about
+    /// a parser should read as malicious.
+    /// </summary>
+    [Fact]
+    public void A_javascript_lexer_is_not_reported_as_obfuscated()
+    {
+        const string lexer =
+            @"function scan(t){var c=String.fromCharCode(t.charCodeAt(0)+1);" +
+            @"if(c===""\u0041""||c===""\x42""){return eval(""(""+t+"")"")}" +
+            @"return atob(t.slice(4))}";
+
+        Assert.All(ScriptAnalyzer.Analyse(lexer, ScriptKind.JavaScript),
+            s => Assert.Equal(0, s.Points));
     }
 
     [Fact]

@@ -177,10 +177,50 @@ public class BehaviorEngineTests
     [Theory]
     [InlineData("powershell -Command Get-Process", false)]
     [InlineData(@"C:\Program Files\App\app.exe --config C:\ProgramData\App\settings.json", false)]
-    [InlineData("app.exe -d TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAA", true)]
+    [InlineData("app.exe -d TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", true)]
     public void Base64_detection_ignores_ordinary_command_lines(string commandLine, bool expected)
     {
         Assert.Equal(expected, BehaviorEngine.LooksBase64Encoded(commandLine, out _));
+    }
+
+    /// <summary>
+    /// All of these appeared on a real machine and none is an encoded payload. A git
+    /// hash is exactly 40 characters, which the old 40-character minimum caught
+    /// outright; content-addressed file names have the same shape.
+    /// </summary>
+    [Theory]
+    [InlineData("git checkout 8f2a1c9e4b7d6035a1f8e2c4b9d7063a5e1f8c2b")]
+    [InlineData("node build.js --out dist/main-a1b2c3d4e5f60718293a4b5c6d7e8f901.js")]
+    [InlineData(@"app.exe --id 1bd48655aa754955bc948c5a054270a1")]
+    [InlineData("dotnet test --filter FullyQualifiedNameContainsSomethingRatherLongIndeed")]
+    public void Hashes_and_long_identifiers_are_not_encoded_payloads(string commandLine)
+    {
+        Assert.False(BehaviorEngine.LooksBase64Encoded(commandLine, out int length),
+            $"matched a {length}-character run");
+    }
+
+    /// <summary>
+    /// Nexus could not read conhost.exe's image path — protected processes refuse —
+    /// and reported it as masquerading, with an empty directory in the message. A
+    /// permission failure is not evidence.
+    /// </summary>
+    [Fact]
+    public void An_unreadable_image_path_is_not_treated_as_the_wrong_directory()
+    {
+        Assert.DoesNotContain("beh-masquerade", CodesFor(Launch("", "conhost.exe 0x4")));
+    }
+
+    /// <summary>Build tools routinely pass thousands of characters; the Windows limit
+    /// is 32767 and a 3762-character shell invocation was being reported.</summary>
+    [Fact]
+    public void An_ordinary_long_build_command_line_is_not_reported()
+    {
+        string commandLine = "cl.exe " + string.Join(" ",
+            Enumerable.Range(0, 200).Select(i => $@"/I C:\src\vendor\include\module{i}"));
+
+        Assert.InRange(commandLine.Length, 2001, 8000);
+        Assert.DoesNotContain("beh-huge-commandline",
+            CodesFor(Launch(@"C:\tools\cl.exe", commandLine)));
     }
 
     [Theory]

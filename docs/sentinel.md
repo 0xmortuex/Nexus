@@ -124,6 +124,38 @@ executable memory to run bytes out of.
 UTF-16 is decoded properly. Reading a UTF-16 script as UTF-8 turns it into noise
 that every keyword check then silently misses.
 
+### JavaScript is graded differently, and why
+
+Those obfuscation rules apply to PowerShell, batch and VBScript. They do **not**
+score JavaScript or HTML, because measuring them on a real project showed they have
+no discriminating power there.
+
+The measurement: an ordinary Next.js project, 18,889 files. Under the original rules
+1,988 of them came out as findings, several at 68/100 — "looks malicious". Not one
+was. `jquery.min.js` was flagged because minifiers emit `String.fromCharCode`.
+`typescript.js` was flagged because a lexer calls it on nearly every line.
+`core-js` polyfills were flagged because they construct an `ActiveXObject("htmlfile")`
+to detect Internet Explorer. The rules were right about what they saw and wrong about
+what it meant: in a language whose entire ecosystem is generated, bundled and
+transpiled, "this text was not written by hand" describes almost everything.
+
+What is scored in a web script is the Windows Script Host surface that actually does
+something — `WScript.Shell`, `Scripting.FileSystemObject`, `ADODB.Stream`,
+`Shell.Application`. No browser can call those, so a `.js` file that does is meant to
+be run by Windows, which is how script-based malware arrives. `ActiveXObject` and
+`MSXML2.XMLHTTP` are deliberately *not* scored, because Internet Explorer-era web code
+uses both.
+
+Everything the obfuscation rules noticed is still recorded and still shown when a
+finding is opened. It is just worth zero points, so it cannot turn an ordinary file
+into an alert on its own.
+
+The cost of this is real and worth stating: a malicious npm package that shells out
+via `child_process` will not be caught by static analysis here, because legitimate
+build tooling does the same thing constantly. That is a genuine gap, accepted
+knowingly. The alternative — a thousand findings a developer learns to dismiss — is
+not a safer tool, only a louder one.
+
 `ArchiveStaticEngine` looks inside ZIPs, because that is how most malware arrives and
 a scanner that stops at the container reports "unknown" on the files it most needs an
 opinion about. Every limit exists because the archive is attacker-controlled: entry

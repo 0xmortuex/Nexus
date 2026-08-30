@@ -66,20 +66,10 @@ public static class ScriptAnalyzer
         AddDefenceTamperingSignals(lower, signals);
         AddShellcodeSignals(lower, signals);
 
-        // Everything below is about obfuscation, and obfuscation is only evidence
-        // when the file has no ordinary reason to be unreadable. Minified and bundled
-        // JavaScript has exactly that reason — see BuildOutputLooksMinified.
-        if (IsMinifiedWebScript(text, kind))
+        if (kind is ScriptKind.JavaScript or ScriptKind.Html)
         {
-            signals.Add(new SecuritySignal(
-                SignalSource.StaticRules,
-                SignalWeight.Informational,
-                "script-minified-bundle",
-                "This is minified or bundled JavaScript. Its contents are unreadable because a build " +
-                "tool compressed them, not because anything is hiding, so the usual obfuscation " +
-                "checks would say nothing useful about it."));
-
             AddWebScriptSignals(lower, signals);
+            AddWebScriptObservations(text, lower, signals);
             return signals;
         }
 
@@ -88,6 +78,60 @@ public static class ScriptAnalyzer
         AddPersistenceSignals(lower, signals);
 
         return signals;
+    }
+
+    /// <summary>
+    /// Records what the obfuscation, download and persistence rules noticed in a web
+    /// script, without letting any of it affect the score.
+    ///
+    /// The first attempt at this fix only exempted *minified* files, on the theory
+    /// that unreadability was the problem. Measuring it against a real Next.js
+    /// project proved that wrong: 1,988 files still came out as findings, and the
+    /// worst offenders were not minified at all. typescript.js is a compiler — it
+    /// calls String.fromCharCode on nearly every line because that is what a lexer
+    /// does. So do parsers, template engines, and encoding libraries.
+    ///
+    /// The honest conclusion is that these rules do not discriminate in JavaScript at
+    /// all, minified or not. They were written for PowerShell, where building a
+    /// string out of character codes really is unusual. In a language whose entire
+    /// ecosystem is compiled, bundled and generated, the same pattern is background
+    /// noise, and a signal that fires on the background is not a signal.
+    ///
+    /// The observations are kept and shown, because a user who opens a finding should
+    /// see everything Nexus noticed. They are just worth zero points, so they cannot
+    /// on their own turn an ordinary file into an alert.
+    /// </summary>
+    private static void AddWebScriptObservations(string text, string lower, List<SecuritySignal> signals)
+    {
+        var observations = new List<SecuritySignal>();
+
+        AddObfuscationSignals(text, lower, observations);
+        AddDownloadAndRunSignals(lower, observations);
+        AddPersistenceSignals(lower, observations);
+
+        if (observations.Count == 0)
+            return;
+
+        if (IsMinifiedWebScript(text, ScriptKind.JavaScript))
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.StaticRules,
+                SignalWeight.Informational,
+                "script-minified-bundle",
+                "This is minified or bundled JavaScript, so its contents are unreadable because a " +
+                "build tool compressed them, not because anything is hiding."));
+        }
+
+        foreach (var observation in observations)
+        {
+            signals.Add(observation with
+            {
+                Weight = SignalWeight.Informational,
+                Explanation = observation.Explanation +
+                    " (Noted but not counted: this pattern is ordinary in JavaScript, which is " +
+                    "generated and bundled far more often than it is hand-written.)",
+            });
+        }
     }
 
     /// <summary>
@@ -134,30 +178,57 @@ public static class ScriptAnalyzer
     /// </summary>
     private static void AddWebScriptSignals(string lower, List<SecuritySignal> signals)
     {
-        (string Needle, string Explanation)[] scriptHostApis =
+        // These do something: run a program, write a file, save downloaded bytes.
+        // No browser has ever been able to call them, so a .js file that does is
+        // meant to be run by Windows Script Host.
+        (string Needle, string Explanation)[] capableApis =
         [
-            ("activexobject", "creates ActiveX objects, which only Windows Script Host can do — a web page cannot"),
             ("wscript.shell", "uses the Windows shell object to run programs"),
             ("wscript.createobject", "creates Windows automation objects"),
             ("scripting.filesystemobject", "reads and writes files through Windows Script Host"),
             ("shell.application", "drives the Windows shell directly"),
-            ("msxml2.xmlhttp", "downloads through a Windows-only HTTP object"),
             ("adodb.stream", "writes raw bytes to disk, which is how a downloaded payload is saved"),
         ];
 
-        var matched = scriptHostApis
+        // These only *might* mean Windows Script Host. Both are also how web code
+        // spoke to Internet Explorer, and that code is still everywhere: core-js
+        // constructs an ActiveXObject("htmlfile") and every pre-2015 XHR shim asks
+        // for MSXML2.XMLHTTP. On a real project these two alone accounted for every
+        // remaining false positive, so on their own they are worth nothing.
+        (string Needle, string Explanation)[] ambiguousApis =
+        [
+            ("activexobject", "refers to ActiveXObject, which is both a Windows Script Host entry point and the way older web code detected Internet Explorer"),
+            ("msxml2.xmlhttp", "refers to the MSXML HTTP object, used by Windows scripts and by Internet Explorer-era web code alike"),
+        ];
+
+        var capable = capableApis
             .Where(api => lower.Contains(api.Needle, StringComparison.Ordinal))
             .ToArray();
 
-        if (matched.Length == 0)
+        if (capable.Length > 0)
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.StaticRules,
+                SignalWeight.Strong,
+                "script-windows-script-host",
+                $"This script {capable[0].Explanation}. Web pages cannot use these; a script that " +
+                "does is meant to be run by Windows itself, which is how script-based malware arrives."));
             return;
+        }
 
-        signals.Add(new SecuritySignal(
-            SignalSource.StaticRules,
-            SignalWeight.Strong,
-            "script-windows-script-host",
-            $"This JavaScript {matched[0].Explanation}. Web pages cannot use these; a .js file that " +
-            "does is meant to be run by Windows itself, which is how script-based malware arrives."));
+        var ambiguous = ambiguousApis
+            .Where(api => lower.Contains(api.Needle, StringComparison.Ordinal))
+            .ToArray();
+
+        if (ambiguous.Length > 0)
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.StaticRules,
+                SignalWeight.Informational,
+                "script-activex-reference",
+                $"This script {ambiguous[0].Explanation}. Nothing here actually runs a program or " +
+                "writes a file, so it is recorded rather than counted."));
+        }
     }
 
     /// <summary>Decode bytes as text, honouring a BOM. Scripts are commonly UTF-16 on
