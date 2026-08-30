@@ -107,7 +107,11 @@ public partial class App : System.Windows.Application
         var reputation = new ReputationService(log, paths);
         var scannerHost = new ScannerHost(log);
         var autoruns = new AutorunEnumerator(log, signatures);
-        var behaviorEngine = new BehaviorEngine();
+        // Told its own name so the helper processes Nexus launches — schtasks for the
+        // autostart task, PowerShell for the Defender query — are reported as its own
+        // rather than accused.
+        var behaviorEngine = new BehaviorEngine(
+            System.IO.Path.GetFileName(Environment.ProcessPath) ?? "Nexus.exe");
         var behaviourWatcher = new ProcessDetailWatcher(log, behaviorEngine);
         var trustStore = new TrustStore(paths);
         var quarantineJournal = new QuarantineJournal(paths);

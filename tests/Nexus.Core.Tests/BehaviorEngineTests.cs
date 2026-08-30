@@ -194,6 +194,43 @@ public class BehaviorEngineTests
         Assert.Equal(expected, BehaviorEngine.HasDeceptiveDoubleExtension(fileName, out _));
     }
 
+    /// <summary>
+    /// Nexus creates its autostart entry with schtasks and queries Defender with
+    /// PowerShell, both of which match rules here. Before this, switching on "start
+    /// with Windows" made Nexus raise a security alert about itself.
+    /// </summary>
+    [Theory]
+    [InlineData(@"C:\Windows\System32\schtasks.exe",
+        "schtasks /Create /F /RL HIGHEST /SC ONLOGON /TN \"Nexus Optimizer\" /TR \"C:\\Nexus\\Nexus.exe\"")]
+    [InlineData(@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        "powershell -NoProfile -ExecutionPolicy Bypass -Command Get-MpComputerStatus")]
+    public void Helpers_that_nexus_itself_launches_are_marked_not_accused(string image, string commandLine)
+    {
+        var finding = new BehaviorEngine().Observe(
+            Launch(image, commandLine, parentImagePath: @"C:\Program Files\Nexus\Nexus.exe"));
+
+        Assert.NotNull(finding);
+
+        // Reported, not hidden — the same choice the startup audit makes about Nexus's
+        // own registry keys.
+        var signal = Assert.Single(finding.Signals);
+        Assert.Equal("beh-nexus-own-helper", signal.Code);
+        Assert.Equal(SignalWeight.Informational, signal.Weight);
+        Assert.Equal(0, signal.Points);
+    }
+
+    [Fact]
+    public void The_same_command_from_anything_else_is_still_reported_normally()
+    {
+        var finding = new BehaviorEngine().Observe(Launch(
+            @"C:\Windows\System32\schtasks.exe",
+            "schtasks /Create /SC ONLOGON /TN Updater /TR C:\\Users\\x\\AppData\\Roaming\\u.exe",
+            parentImagePath: @"C:\Users\x\AppData\Local\Temp\dropper.exe"));
+
+        Assert.NotNull(finding);
+        Assert.Contains(finding.Signals, s => s.Code == "beh-lolbin-schtasks");
+    }
+
     [Fact]
     public void Ancestry_is_reconstructed_across_exited_parents()
     {

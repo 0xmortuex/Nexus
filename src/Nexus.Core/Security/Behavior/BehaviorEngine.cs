@@ -35,6 +35,17 @@ public sealed class BehaviorEngine
     private readonly Dictionary<int, TrackedProcess> _live = new();
     private readonly Queue<int> _insertionOrder = new();
     private readonly object _gate = new();
+    private readonly string _selfImageName;
+
+    /// <param name="selfImageName">Nexus's own executable name. Helper processes it
+    /// launches are still reported, but marked as its own rather than accused —
+    /// Nexus runs schtasks to create its autostart task and PowerShell to query
+    /// Defender, and both match rules here. Without this, switching on "start with
+    /// Windows" made Nexus raise a security alert about itself.</param>
+    public BehaviorEngine(string selfImageName = "Nexus.exe")
+    {
+        _selfImageName = selfImageName;
+    }
 
     /// <summary>Record a launch and report anything notable about it.</summary>
     public BehaviorFinding? Observe(ProcessStartEvent evt)
@@ -53,6 +64,23 @@ public sealed class BehaviorEngine
         if (signals.Count == 0)
             return null;
 
+        // Nexus's own helper processes are reported, not hidden — the same choice the
+        // startup audit makes about Nexus's own registry keys. A security tool that
+        // quietly exempts itself teaches the user to trust a blind spot. But they are
+        // marked rather than accused, and carry no score.
+        if (IsOwnHelper(evt))
+        {
+            signals =
+            [
+                new SecuritySignal(
+                    SignalSource.Behavior,
+                    SignalWeight.Informational,
+                    "beh-nexus-own-helper",
+                    $"{evt.ImageName} was started by Nexus itself. It is listed here so Nexus's own " +
+                    "footprint is visible rather than hidden."),
+            ];
+        }
+
         return new BehaviorFinding
         {
             Target = ScanTarget.ForProcess(evt.Pid, evt.ImagePath),
@@ -60,6 +88,11 @@ public sealed class BehaviorEngine
             Trigger = evt,
         };
     }
+
+    /// <summary>True when Nexus launched this process itself.</summary>
+    private bool IsOwnHelper(ProcessStartEvent evt) =>
+        evt.ParentImageName.Length > 0
+        && string.Equals(evt.ParentImageName, _selfImageName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Drop a process from the ancestry map when it exits.</summary>
     public void Forget(int pid)
