@@ -219,6 +219,38 @@ public class BehaviorEngineTests
         Assert.Equal(0, signal.Points);
     }
 
+    /// <summary>
+    /// `reg export` reads; `reg add` writes. Reporting a backup as persistence is
+    /// simply wrong, and Nexus's own tweak backups export Image File Execution
+    /// Options keys before touching them.
+    /// </summary>
+    [Fact]
+    public void Exporting_a_startup_key_is_not_reported_as_writing_to_it()
+    {
+        var codes = CodesFor(Launch(
+            @"C:\Windows\System32\reg.exe",
+            @"reg export ""HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\game.exe"" backup.reg"));
+
+        Assert.DoesNotContain("beh-lolbin-reg-ifeo", codes);
+        Assert.DoesNotContain("beh-lolbin-reg-run-key", codes);
+    }
+
+    [Theory]
+    [InlineData(@"reg add ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v x /d y", "beh-lolbin-reg-run-key")]
+    [InlineData(@"reg add ""HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\taskmgr.exe"" /v Debugger /d evil.exe", "beh-lolbin-reg-ifeo")]
+    public void Writing_to_a_startup_or_debugger_key_is_reported(string commandLine, string expected)
+    {
+        Assert.Contains(expected, CodesFor(Launch(@"C:\Windows\System32\reg.exe", commandLine)));
+    }
+
+    /// <summary>A rule needing every pattern must not fire on one of them.</summary>
+    [Fact]
+    public void A_require_all_rule_does_not_fire_on_a_partial_match()
+    {
+        Assert.DoesNotContain("beh-lolbin-reg-run-key",
+            CodesFor(Launch(@"C:\Windows\System32\reg.exe", @"reg add ""HKCU\Software\Vendor\Settings"" /v x /d y")));
+    }
+
     [Fact]
     public void The_same_command_from_anything_else_is_still_reported_normally()
     {

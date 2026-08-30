@@ -179,7 +179,11 @@ public sealed class BehaviorEngine
                 .Where(pattern => commandLine.Contains(pattern, StringComparison.Ordinal))
                 .ToArray();
 
-            if (matched.Length == 0)
+            bool fires = rule.RequireAll
+                ? matched.Length == rule.AbusePatterns.Count
+                : matched.Length > 0;
+
+            if (!fires)
                 continue;
 
             signals.Add(new SecuritySignal(

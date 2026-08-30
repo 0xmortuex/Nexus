@@ -8,12 +8,17 @@ namespace Nexus.Core.Security.Behavior;
 /// <param name="Code">Distinguishes rules that share an image. Several binaries have
 /// more than one rule at different severities, and without this they would all report
 /// under the same code.</param>
+/// <param name="RequireAll">When true, every pattern must be present rather than any
+/// one of them. Needed where a key path alone says nothing: "reg.exe" plus a Run key
+/// is a backup if the verb is `export` and persistence if it is `add`, and reporting
+/// the first as the second is simply wrong.</param>
 public sealed record LolBinRule(
     string Image,
     IReadOnlyList<string> AbusePatterns,
     string Explanation,
     SignalWeight Weight = SignalWeight.Moderate,
-    string? Code = null);
+    string? Code = null,
+    bool RequireAll = false);
 
 /// <summary>
 /// The behavioural rule data: which system binaries get abused and how, which
@@ -111,9 +116,16 @@ public static class BehaviorCatalog
             "schtasks.exe created a scheduled task, a common persistence step",
             SignalWeight.Moderate),
 
-        new("reg.exe", ["\\currentversion\\run", "\\image file execution options"],
-            "reg.exe wrote to a startup or debugger registry key",
-            SignalWeight.Moderate),
+        // Both require the "add" verb. `reg export` of the same key only reads it —
+        // Nexus's own tweak backups export Image File Execution Options keys before
+        // touching them — and reporting a backup as persistence is simply wrong.
+        new("reg.exe", ["add", "\\currentversion\\run"],
+            "reg.exe wrote to a startup registry key",
+            SignalWeight.Moderate, Code: "reg-run-key", RequireAll: true),
+
+        new("reg.exe", ["add", "\\image file execution options"],
+            "reg.exe wrote to an Image File Execution Options key, which can make one program launch instead of another",
+            SignalWeight.Moderate, Code: "reg-ifeo", RequireAll: true),
 
         new("vssadmin.exe", ["delete shadows", "resize shadowstorage"],
             "vssadmin.exe deleted or shrank shadow copies — this is how ransomware prevents rollback",
