@@ -161,13 +161,23 @@
                     <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="18">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal">
+                            <!-- Labelled deliberately. A bare "62 → 84" in large type reads as
+                                 "my PC is 22% faster", which this number is not and cannot be:
+                                 it counts how many recommended settings are applied. Nexus does
+                                 not promise FPS anywhere else and must not imply it here. -->
+                            <TextBlock Text="Setup checklist" FontSize="12"
+                                       Foreground="{StaticResource TextDimBrush}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                 <TextBlock Text="{Binding BeforeScore}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource TextDimBrush}"/>
                                 <TextBlock Text="  →  " FontSize="20" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}"/>
                                 <TextBlock Text="{Binding AfterScore}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource AccentAltBrush}"/>
                                 <TextBlock Text="  / 100" FontSize="14" VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}"/>
                             </StackPanel>
                             <TextBlock Text="{Binding ApplySummary}" Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="This score counts how many of the recommended settings are now applied. It is not a speed measurement, and it is not a claim that your PC is faster — no checklist can tell you that."/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Text="If you want to know whether any of it actually helped, Nexus can measure it: switch to Advanced mode and use Latency &amp; Hardware → Measure. Capture a baseline, change something, measure again. It is allowed to tell you nothing changed, and for most individual tweaks it will."/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
