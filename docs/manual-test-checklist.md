@@ -379,3 +379,25 @@ logic; everything below is the part that talks to the OS.
 - [ ] Corrupt a line in the middle of the file → Nexus still loads the rest and logs a
       sane count, rather than discarding the whole list.
 - [ ] Restore Defaults → the file is gone and reputation reads Off again.
+
+## 13. Optional YARA
+
+Only if you have added `yara_x_capi.dll` and rules; skip otherwise.
+
+- [ ] Without the DLL: `Nexus.Scanner.exe --self-test` lists four engines and no YARA,
+      and everything else still works. A missing optional engine must never degrade
+      the rest.
+- [ ] With the DLL and `assets/yara/nexus-selftest.yar`: the self-test lists YARA.
+- [ ] Scan a file containing the EICAR marker -> reports `yara-Nexus_SelfTest_Eicar`
+      alongside the byte-pattern hit. Both engines should fire; they are independent.
+- [ ] Scan any Windows binary -> reports `yara-Nexus_SelfTest_PeStructure`, proving
+      structural conditions work rather than just string matching.
+- [ ] Put a deliberately broken rule in `assets/yara/` -> the worker writes a compile
+      error to standard error and reports YARA unavailable, rather than silently
+      scanning with no rules.
+- [ ] Add a large third-party rule set and scan a folder -> no crashes, and scanning
+      stays responsive. If a single file trips the five-second rule timeout it is
+      reported as `yara-timeout` rather than being silently skipped.
+- [ ] Leave it running through a long scan -> no growth in the worker's memory beyond
+      the file being scanned (the callback delegate is pinned; a leak here would show
+      as steady growth).

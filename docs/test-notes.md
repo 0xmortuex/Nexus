@@ -200,7 +200,7 @@ blocklisted kernel driver), "AI" auto-tuning (wrapper over existing tweaks).
 
 ## Stage 8 — Sentinel (advisory security) and the measurement layer
 
-`dotnet build`: clean, 0 warnings (warnings are errors). `dotnet test`: 416/416.
+`dotnet build`: clean, 0 warnings (warnings are errors). `dotnet test`: 434/434.
 Single-file publish re-verified — and it now produces **two** binaries,
 `Nexus.exe` (63 MB) plus `Nexus.Scanner.exe` (11.6 MB, self-contained and
 trimmed), with the publish failing outright if the scanner is absent.
@@ -267,6 +267,25 @@ project cannot reach them — and every one had a plausible failure mode:
 
 The App classes kept only what genuinely belongs to them: reading the registry,
 expanding environment variables, and asking the disk what exists.
+
+### Verified against real third-party services and libraries
+
+Some things can only be checked against the real thing, and were:
+
+- **YARA-X v1.20.0.** Bindings exercised against VirusTotal's own released DLL. The
+  published build ships with four engines and gains YARA the moment the library is
+  dropped in, and the self-test rules match — including a PE-structure condition on a
+  real binary, which is the capability literal patterns cannot express.
+- **abuse.ch MalwareBazaar.** Both live exports: the plain-text recent list and the
+  42 MB full ZIP, the latter yielding 1,128,409 hashes that parse and round-trip
+  cleanly. That test is also what exposed the ~74 MB memory spike in the list writer.
+- **Microsoft Defender.** The real `Get-MpComputerStatus` / `Get-MpPreference` output,
+  which is how the non-elevated placeholder behaviour was found.
+- **`GetExtendedTcpTable`.** Cross-checked against `netstat`, because a port
+  byte-order bug is silently wrong rather than obviously broken.
+- **The baseline builder's premise.** Measured on a real machine: ~31,000 binaries
+  across the four system folders, with 100% of a 400-file System32 sample carrying
+  valid signatures.
 
 ### Not testable here, and why
 

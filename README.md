@@ -46,8 +46,11 @@ it instead of deciding for you.
   (masquerading system binaries, living-off-the-land command lines, documents
   spawning shells), ransomware canaries with mass-change detection, script
   obfuscation analysis, ZIP inspection, per-process network connections, and
-  Microsoft Defender health including exclusion auditing.
-  Every finding shows its reasons and a score out of 100.
+  Microsoft Defender health including exclusion auditing. New downloads are checked
+  as they land, and the folders where files actually arrive are re-checked on a
+  schedule that never runs while a game is active. Optional YARA-X support activates
+  when you supply the library and rules. Every finding shows its reasons and a score
+  out of 100.
   Nothing is ever blocked, moved or deleted without a click on that exact file.
   See `docs/sentinel.md`.
 - **UI** — dark WPF app with Dashboard, Processes, Game Mode, Tweaks, Security,
