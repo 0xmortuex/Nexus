@@ -392,8 +392,9 @@ Only if you have added `yara_x_capi.dll` and rules; skip otherwise.
 - [ ] With the DLL and `assets/yara/nexus-selftest.yar`: the self-test lists YARA.
 - [ ] Scan a file containing the EICAR marker -> reports `yara-Nexus_SelfTest_Eicar`
       alongside the byte-pattern hit. Both engines should fire; they are independent.
-- [ ] Scan any Windows binary -> reports `yara-Nexus_SelfTest_PeStructure`, proving
-      structural conditions work rather than just string matching.
+- [ ] Scan an ordinary signed Windows binary → reports NOTHING from YARA. The
+      shipped self-test rules must not match ordinary files; a bundled rule that
+      fires on everything is worse than shipping no rules at all.
 - [ ] Put a deliberately broken rule in `assets/yara/` -> the worker writes a compile
       error to standard error and reports YARA unavailable, rather than silently
       scanning with no rules.

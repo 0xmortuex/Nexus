@@ -193,6 +193,12 @@ file containing the EICAR marker should report `yara-Nexus_SelfTest_Eicar`. If t
 library loaded but rules did not compile, the worker writes the reason to standard
 error rather than silently switching the engine off.
 
+The shipped self-test rule matches only the EICAR marker, deliberately. An earlier
+version also carried a rule matching any PE file, to demonstrate that structural
+conditions work — and since every YARA hit is weighted Moderate, which clears the
+alert threshold on its own, that rule reported every unsigned executable on the
+machine. Bundled rules that fire on ordinary files are worse than shipping none.
+
 Nexus binds the C API directly rather than through a community wrapper package.
 In a security tool the supply chain is part of the threat model, and each wrapper is
 one more party whose build you are trusting inside the process that parses hostile

@@ -26,15 +26,18 @@ rule Nexus_SelfTest_Eicar
         $marker
 }
 
-rule Nexus_SelfTest_PeStructure
-{
-    meta:
-        author      = "Nexus"
-        description = "Proves structural conditions work, which is the whole point of YARA over literal byte patterns."
+/*
+    There was a second rule here that matched any PE file, to demonstrate that
+    structural conditions work. It was removed, and the reason is worth recording.
 
-    condition:
-        // A DOS header followed by a PE signature at the offset the stub points to.
-        // A literal-pattern engine cannot express this; that is the capability gap
-        // YARA fills.
-        uint16(0) == 0x5A4D and uint32(uint32(0x3C)) == 0x00004550
-}
+    Every YARA hit is weighted Moderate, which is 20 points against a 15-point alert
+    threshold. A rule matching every executable therefore raised a finding on every
+    executable. Signed binaries survived on their exonerating signature, so it looked
+    fine in testing — but any unsigned program would have been reported as "worth a
+    look" purely because Nexus shipped a rule that matches everything.
+
+    A detection engine whose own bundled rules generate false positives is worse than
+    one with no rules at all. The EICAR rule above is enough to prove the pipeline
+    works end to end: library loaded, rules compiled, scan ran, callback fired,
+    identifier returned.
+*/
