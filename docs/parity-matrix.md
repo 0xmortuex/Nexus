@@ -105,12 +105,12 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 |---|---|---|
 | On-demand file scanning | ✅ | `SentinelService.ScanFileAsync`, Security tab |
 | Folder / full-disk scanning | ✅ | `ScanFolderAsync`, streams verdicts as it goes |
-| Hash reputation (known-good / known-bad) | ⚠️ | `ReputationService` — local lists only; supply your own. Online lookup is deliberately not wired in |
+| Hash reputation (known-good / known-bad) | ✅ | `ReputationService`. Known-good is built from the machine's own validly-signed binaries; known-bad takes a MalwareBazaar export. Online lookup deliberately not wired in |
 | Authenticode signature verification | ✅ | `AuthenticodeVerifier` over WinVerifyTrust |
 | PE structure heuristics | ✅ | `PeHeuristics`: entropy, W+X sections, import capability groups, packer names, entry-point sanity |
 | Byte-pattern signatures | ✅ | `PatternEngine`, `assets/patterns.txt` |
 | YARA rules | ❌ (not yet) | needs a native library shipped and a rule set chosen; reports itself unavailable rather than faking it |
-| ML / PE classifier | ❌ (not yet) | needs a model evaluated against a real false-positive budget; an unevaluated one is confident-sounding noise |
+| ML / PE classifier | ❌ (won't) | reimplementing EMBER's feature extractor invites a silent train/inference mismatch, and the fusion cap means a single source can never be decisive anyway. See docs/sentinel.md |
 | Behaviour monitoring | ⚠️ | `BehaviorEngine` — masquerading, LOLBins, document-spawned shells, encoded command lines. WMI-polled, so very short-lived processes are missed |
 | Startup / persistence audit | ✅ | Run keys, startup folders, services, IFEO, Winlogon, AppInit_DLLs, WMI subscriptions, scheduled tasks |
 | Ransomware behaviour detection | ⚠️ | shadow-copy deletion, backup deletion and recovery-disabling are detected and reported — but reported only, after the fact |

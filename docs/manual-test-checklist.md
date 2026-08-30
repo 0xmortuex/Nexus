@@ -359,3 +359,23 @@ logic; everything below is the part that talks to the OS.
 ### Wizard
 - [ ] First run reaches the Security step before Apply, and unchecking the ransomware
       option means no tripwire files are ever written.
+
+## 12. Known-good baseline
+
+- [ ] Before building: scan `C:\Windows\System32` → signed Microsoft binaries come
+      back **Unknown**, and "Hash reputation" reads Off. That is the gap this fixes.
+- [ ] "Build baseline from this PC" reports progress and the window stays responsive.
+      Expect roughly 30,000 files and two to five minutes.
+- [ ] "Stop" mid-build leaves any previous baseline untouched.
+- [ ] Afterwards `%APPDATA%\Nexus\security\known-good-local.txt` exists, opens with a
+      `#` header naming its provenance and date, and holds ~20–40k hashes.
+- [ ] Restart Nexus → the log reports the loaded count and "Hash reputation" reads On.
+- [ ] Re-scan System32 → those binaries now come back **Trusted** or **Clean** instead
+      of Unknown.
+- [ ] **The one that matters:** put an unsigned binary of your own into Program Files,
+      rebuild the baseline, and confirm its hash is **NOT** in the file. The entire
+      safety of building an allowlist from the local machine rests on only
+      validly-signed files being recorded.
+- [ ] Corrupt a line in the middle of the file → Nexus still loads the rest and logs a
+      sane count, rather than discarding the whole list.
+- [ ] Restore Defaults → the file is gone and reputation reads Off again.
