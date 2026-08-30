@@ -147,11 +147,40 @@ public class VerdictEngineTests
 
     [Theory]
     [InlineData(SignalWeight.Weak, ThreatLevel.Unknown)]
-    [InlineData(SignalWeight.Moderate, ThreatLevel.Suspicious)]
+    [InlineData(SignalWeight.Moderate, ThreatLevel.Unknown)]
     [InlineData(SignalWeight.Strong, ThreatLevel.Suspicious)]
     public void Single_signal_levels_are_conservative(SignalWeight weight, ThreatLevel expected)
     {
         Assert.Equal(expected, Evaluate([Bad(SignalSource.StaticRules, weight)]).Level);
+    }
+
+    /// <summary>
+    /// The calibration that matters in practice. "Unsigned" plus one other mild
+    /// observation describes an enormous number of perfectly ordinary files, and on a
+    /// real machine that combination produced hundreds of false alarms.
+    /// </summary>
+    [Fact]
+    public void Two_weak_signals_do_not_warrant_an_alert()
+    {
+        var verdict = Evaluate(
+        [
+            Bad(SignalSource.CodeSignature, SignalWeight.Weak, "unsigned"),
+            Bad(SignalSource.StaticRules, SignalWeight.Weak, "odd-but-common"),
+        ]);
+
+        Assert.False(verdict.WarrantsAlert, $"scored {verdict.Score}/100 as {verdict.Level}");
+    }
+
+    [Fact]
+    public void A_moderate_signal_needs_corroboration_before_it_alerts()
+    {
+        Assert.False(Evaluate([Bad(SignalSource.StaticRules, SignalWeight.Moderate)]).WarrantsAlert);
+
+        Assert.True(Evaluate(
+        [
+            Bad(SignalSource.StaticRules, SignalWeight.Moderate),
+            Bad(SignalSource.Behavior, SignalWeight.Moderate),
+        ]).WarrantsAlert);
     }
 
     [Fact]

@@ -150,10 +150,11 @@ public partial class App : System.Windows.Application
         var ransomwareGuard = new RansomwareGuardService(log, massChange);
         var defenderHealth = new DefenderHealthService(log);
         var networkMonitor = new NetworkMonitorService(log);
+        var systemIntegrity = new SystemIntegrityService(log, () => dns.HasAppliedCustomDns);
         var sentinel = new SentinelService(
             log, fileIdentity, signatures, reputation, scannerHost,
             autoruns, behaviourWatcher, trustStore, verdictCache,
-            ransomwareGuard, massChange, defenderHealth, networkMonitor, settings,
+            ransomwareGuard, massChange, defenderHealth, networkMonitor, systemIntegrity, settings,
             baselineBuilder, hashFeeds, () => gameMode.IsActive);
 
         var tweakState = new TweakStateStore(paths);

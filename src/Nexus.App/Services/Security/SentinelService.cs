@@ -47,6 +47,7 @@ public sealed class SentinelService : IDisposable
     private readonly MassChangeDetector _massChange;
     private readonly DefenderHealthService _defender;
     private readonly NetworkMonitorService _network;
+    private readonly SystemIntegrityService _integrity;
     private readonly SettingsService _settings;
     private readonly KnownGoodBaselineService _baseline;
     private readonly HashFeedImportService _feeds;
@@ -77,6 +78,7 @@ public sealed class SentinelService : IDisposable
         MassChangeDetector massChange,
         DefenderHealthService defender,
         NetworkMonitorService network,
+        SystemIntegrityService integrity,
         SettingsService settings,
         KnownGoodBaselineService baseline,
         HashFeedImportService feeds,
@@ -95,6 +97,7 @@ public sealed class SentinelService : IDisposable
         _massChange = massChange;
         _defender = defender;
         _network = network;
+        _integrity = integrity;
         _settings = settings;
         _baseline = baseline;
         _feeds = feeds;
@@ -232,6 +235,11 @@ public sealed class SentinelService : IDisposable
         // clears the findings list and rescans sees nothing at all, which reads as
         // "it found nothing" rather than "it already told you". Report() dedupes, so
         // reporting here does not produce a second entry either.
+        // The user's own exclusions come first: if they said not to look, do not look,
+        // and do not spend the hashing to find that out.
+        if (Exclusions.IsExcluded(path))
+            return SkippedVerdict(path);
+
         if (TryReuseCachedVerdict(path, out var cached))
         {
             Report(cached, origin);
@@ -378,8 +386,12 @@ public sealed class SentinelService : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (ScanTargeting.IsNoiseDirectory(file) || !ScanTargeting.IsWorthScanning(file))
+                if (ScanTargeting.IsNoiseDirectory(file)
+                    || !ScanTargeting.IsWorthScanning(file)
+                    || Exclusions.IsExcluded(file))
+                {
                     continue;
+                }
 
                 yield return await ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
             }
@@ -557,6 +569,63 @@ public sealed class SentinelService : IDisposable
         }, DateTimeOffset.Now);
 
         Report(verdict, origin: "Defender health");
+    }
+
+    /// <summary>The user's exclusions, read fresh so edits take effect immediately
+    /// rather than at the next restart.</summary>
+    public ExclusionList Exclusions => new(_settings.Current.Security.Exclusions);
+
+    /// <summary>
+    /// A verdict for a file the user asked Nexus not to look at.
+    ///
+    /// Deliberately "unknown" rather than "clean": Nexus did not examine it and must
+    /// not imply otherwise. An exclusion silences the scan, not the truth.
+    /// </summary>
+    private static Verdict SkippedVerdict(string path) => new()
+    {
+        Target = ScanTarget.ForFile(path),
+        Level = ThreatLevel.Unknown,
+        Score = 0,
+        Signals =
+        [
+            new SecuritySignal(SignalSource.Reputation, SignalWeight.Informational, "excluded-by-user",
+                "You have asked Nexus to skip this file, so it was not examined."),
+        ],
+        EvaluatedAt = DateTimeOffset.Now,
+    };
+
+    // ---- System settings ----
+
+    /// <summary>
+    /// Check the machine settings malware changes to cut you off or redirect you:
+    /// the hosts file, the proxy, and the DNS servers.
+    ///
+    /// None of this involves a program running, so nothing else in Sentinel would
+    /// notice it. Blackholing a security vendor in the hosts file is the sharpest
+    /// signal the whole module has — there is no innocent version of a machine
+    /// blocking its own antivirus.
+    /// </summary>
+    public int AuditSystemSettings()
+    {
+        var facts = _integrity.Collect();
+        var signals = SystemIntegrityAudit.Evaluate(facts);
+
+        if (signals.Count > 0)
+        {
+            var verdict = VerdictEngine.Evaluate(new VerdictInput
+            {
+                Target = ScanTarget.ForFile("Windows network settings"),
+                Signals = signals,
+                EnginesConsulted = new HashSet<SignalSource> { SignalSource.Persistence },
+            }, DateTimeOffset.Now);
+
+            Report(verdict, origin: "system settings");
+        }
+
+        _log.Info("Sentinel",
+            $"Checked the hosts file, proxy and DNS settings; {signals.Count} thing(s) worth a look.");
+
+        return signals.Count;
     }
 
     // ---- Network ----

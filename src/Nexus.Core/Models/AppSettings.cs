@@ -87,6 +87,21 @@ public sealed record SecurityOptions
     /// <summary>Periodically re-check the folders where new files arrive. Never runs
     /// while a game is active.</summary>
     public bool ScheduledQuickScan { get; set; } = true;
+
+    /// <summary>
+    /// Files, folders and file types the user has asked Nexus to skip.
+    ///
+    /// Every antivirus has this and every antivirus is right to: a developer whose
+    /// build output is rescanned on every compile will otherwise turn the whole
+    /// product off. Nexus audits its own exclusions the same way it audits Defender's,
+    /// so a hole wide enough to matter still gets reported.
+    /// </summary>
+    private IReadOnlyList<Security.Exclusion> _exclusions = [];
+    public IReadOnlyList<Security.Exclusion> Exclusions
+    {
+        get => _exclusions;
+        set => _exclusions = value ?? [];
+    }
 }
 
 /// <summary>Root settings document (settings.json). Extended stage by stage.</summary>

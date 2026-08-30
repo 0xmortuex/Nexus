@@ -62,13 +62,102 @@ public static class ScriptAnalyzer
         var signals = new List<SecuritySignal>();
         var lower = text.ToLowerInvariant();
 
+        // Defence tampering and shellcode mean the same thing in any language.
         AddDefenceTamperingSignals(lower, signals);
         AddShellcodeSignals(lower, signals);
+
+        // Everything below is about obfuscation, and obfuscation is only evidence
+        // when the file has no ordinary reason to be unreadable. Minified and bundled
+        // JavaScript has exactly that reason — see BuildOutputLooksMinified.
+        if (IsMinifiedWebScript(text, kind))
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.StaticRules,
+                SignalWeight.Informational,
+                "script-minified-bundle",
+                "This is minified or bundled JavaScript. Its contents are unreadable because a build " +
+                "tool compressed them, not because anything is hiding, so the usual obfuscation " +
+                "checks would say nothing useful about it."));
+
+            AddWebScriptSignals(lower, signals);
+            return signals;
+        }
+
         AddObfuscationSignals(text, lower, signals);
         AddDownloadAndRunSignals(lower, signals);
         AddPersistenceSignals(lower, signals);
 
         return signals;
+    }
+
+    /// <summary>
+    /// True for JavaScript that a build tool produced rather than a person wrote.
+    ///
+    /// This check exists because of a real and embarrassing result: scanning an
+    /// ordinary web project reported jQuery, Next.js and html2canvas as malicious, at
+    /// 68 out of 100. Every pattern that fired is normal in minified code — bundlers
+    /// inline assets as base64, minifiers emit String.fromCharCode, module loaders
+    /// call eval, and every single-page app fetches and executes. The rules were
+    /// written for PowerShell, where those things are genuinely unusual, and applying
+    /// them to build output was simply wrong.
+    ///
+    /// Minification is recognised by shape, not by filename: enormous average line
+    /// length is what a minifier produces and what a hand-written script does not.
+    /// </summary>
+    public static bool IsMinifiedWebScript(string text, ScriptKind kind)
+    {
+        if (kind is not (ScriptKind.JavaScript or ScriptKind.Html))
+            return false;
+
+        if (text.Length < 500)
+            return false;
+
+        int lines = 1;
+        foreach (char c in text)
+        {
+            if (c == '\n')
+                lines++;
+        }
+
+        // Minified output packs thousands of characters onto very few lines. Source a
+        // human wrote and formatted averages well under a hundred.
+        return text.Length / lines > 200;
+    }
+
+    /// <summary>
+    /// What is actually worth reporting in a JavaScript file on Windows.
+    ///
+    /// Malicious .js on Windows is run by Windows Script Host, and it gives itself
+    /// away with APIs that only exist there — ActiveXObject, WScript.Shell, the
+    /// FileSystemObject. Web bundles never touch those, no matter how minified, so
+    /// this separates the two populations far better than any obfuscation heuristic.
+    /// </summary>
+    private static void AddWebScriptSignals(string lower, List<SecuritySignal> signals)
+    {
+        (string Needle, string Explanation)[] scriptHostApis =
+        [
+            ("activexobject", "creates ActiveX objects, which only Windows Script Host can do — a web page cannot"),
+            ("wscript.shell", "uses the Windows shell object to run programs"),
+            ("wscript.createobject", "creates Windows automation objects"),
+            ("scripting.filesystemobject", "reads and writes files through Windows Script Host"),
+            ("shell.application", "drives the Windows shell directly"),
+            ("msxml2.xmlhttp", "downloads through a Windows-only HTTP object"),
+            ("adodb.stream", "writes raw bytes to disk, which is how a downloaded payload is saved"),
+        ];
+
+        var matched = scriptHostApis
+            .Where(api => lower.Contains(api.Needle, StringComparison.Ordinal))
+            .ToArray();
+
+        if (matched.Length == 0)
+            return;
+
+        signals.Add(new SecuritySignal(
+            SignalSource.StaticRules,
+            SignalWeight.Strong,
+            "script-windows-script-host",
+            $"This JavaScript {matched[0].Explanation}. Web pages cannot use these; a .js file that " +
+            "does is meant to be run by Windows itself, which is how script-based malware arrives."));
     }
 
     /// <summary>Decode bytes as text, honouring a BOM. Scripts are commonly UTF-16 on

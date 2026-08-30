@@ -34,7 +34,18 @@ public static class VerdictEngine
 {
     public const int MaxPointsPerSource = 60;
 
-    public const int SuspiciousAt = 15;
+    /// <summary>
+    /// Raised from 15 after a real machine produced 948 findings, almost all of them
+    /// wrong. At 15, two Weak signals from different sources — "unsigned" plus almost
+    /// anything — cleared the bar, and a single Moderate did too. That contradicted
+    /// this file's own stated principle that packing alone is not malware.
+    ///
+    /// At 25 a lone Moderate no longer alerts and neither do two Weaks, so a finding
+    /// needs either something Strong or genuine corroboration. An advisory tool that
+    /// flags a thousand ordinary files has not found a thousand problems; it has
+    /// taught its user to close the window.
+    /// </summary>
+    public const int SuspiciousAt = 25;
     public const int LikelyMaliciousAt = 45;
     public const int MaliciousAt = 75;
 

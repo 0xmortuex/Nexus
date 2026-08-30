@@ -61,7 +61,6 @@ public static class PeHeuristics
         AddImportSignals(image, signals);
         AddMitigationSignals(image, signals);
         AddOverlaySignal(image, signals);
-        AddTimestampSignal(image, signals);
 
         return signals;
     }
@@ -236,23 +235,16 @@ public static class PeHeuristics
             "self-extracting archives are built exactly this way."));
     }
 
-    private static void AddTimestampSignal(PeImage image, List<SecuritySignal> signals)
-    {
-        if (image.TimeDateStamp == 0)
-            return;
-
-        var built = DateTimeOffset.FromUnixTimeSeconds(image.TimeDateStamp);
-
-        // Reproducible builds deliberately set this to a fixed value, so a future
-        // date is only worth a note.
-        if (built > DateTimeOffset.UtcNow.AddDays(1))
-        {
-            signals.Add(new SecuritySignal(
-                SignalSource.StaticRules,
-                SignalWeight.Weak,
-                "pe-future-timestamp",
-                $"The build timestamp reads {built:d}, which is in the future. It was either faked or " +
-                "the build machine's clock was wrong."));
-        }
-    }
+    // AddTimestampSignal was removed rather than reweighted.
+    //
+    // It reported a build timestamp in the future as possibly faked. That was true
+    // when compilers wrote real dates into that field. Modern toolchains do not:
+    // deterministic builds — the default for .NET, Go and Rust — put a content hash
+    // there instead, which routinely decodes to dates like 2056 or 2080. On a real
+    // machine this fired on nearly every current DLL, and paired with "unsigned" it
+    // was enough on its own to push ordinary files past the alert threshold.
+    //
+    // A rule that fires on the overwhelming majority of legitimate files has no
+    // discriminating power left, whatever weight it carries, and a genuinely faked
+    // timestamp is now indistinguishable from a hash anyway.
 }

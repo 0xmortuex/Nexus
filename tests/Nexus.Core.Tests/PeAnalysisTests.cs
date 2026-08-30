@@ -229,13 +229,20 @@ public class PeAnalysisTests
         Assert.DoesNotContain("pe-minimal-imports", codes);
     }
 
+    /// <summary>
+    /// Deterministic builds — now the default for .NET, Go and Rust — put a content
+    /// hash in the timestamp field, which routinely decodes to a far-future date. A
+    /// rule firing on nearly every modern binary has no discriminating power left.
+    /// </summary>
     [Fact]
-    public void A_future_build_timestamp_is_reported()
+    public void A_future_build_timestamp_is_not_reported()
     {
-        Assert.Contains("pe-future-timestamp", Codes(new PeBuilder()
+        var codes = Codes(new PeBuilder()
             .AddLowEntropySection()
-            .WithTimestamp(DateTimeOffset.UtcNow.AddYears(3))
-            .Build()));
+            .WithTimestamp(DateTimeOffset.UtcNow.AddYears(30))
+            .Build());
+
+        Assert.DoesNotContain("pe-future-timestamp", codes);
     }
 
     [Fact]
