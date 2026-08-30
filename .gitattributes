@@ -1,0 +1,15 @@
+# Normalise line endings so a Windows checkout and a Linux CI run see the same
+# bytes. Without this every commit from Windows reports "LF will be replaced by
+# CRLF", and diffs churn depending on who touched the file last.
+* text=auto eol=lf
+
+# Windows-only script formats that genuinely need CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+*.sln  text eol=crlf
+
+# Detection data: keep byte-exact. A hash list or pattern file that gets its line
+# endings rewritten is still parseable, but "text" handling on anything the
+# scanner reads is a habit worth not forming.
+*.txt  -text

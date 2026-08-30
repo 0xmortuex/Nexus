@@ -1,0 +1,34 @@
+# Matches the style the codebase already uses; written down so it survives
+# contributors and IDE defaults.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+trim_trailing_whitespace = true
+
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+[*.{xaml,xml,yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false   # two trailing spaces is a hard line break
+
+[*.cs]
+# File-scoped namespaces, `var` where the type is obvious, expression bodies for
+# one-liners — all as used throughout Nexus.Core.
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_new_line_before_open_brace = all
+dotnet_sort_system_directives_first = true
+
+# Warnings are errors in this project (see Directory.Build.props), so anything
+# promoted here has to be something the codebase genuinely holds to.
+dotnet_diagnostic.CA2016.severity = warning   # forward CancellationToken
+dotnet_diagnostic.CA1063.severity = suggestion
