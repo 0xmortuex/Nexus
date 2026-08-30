@@ -681,6 +681,9 @@
                                 <Button Content="Full scan" Margin="0,0,8,0"
                                         ToolTip="Every fixed drive. Takes a long time; you can keep working and stop it whenever you like."
                                         Command="{Binding FullScanCommand}"/>
+                                <Button Content="Check running programs" Margin="0,0,8,0"
+                                        ToolTip="Checks the files behind every program running right now. Nothing is stopped or closed."
+                                        Command="{Binding ScanRunningCommand}"/>
                                 <Button Content="Check startup items" Margin="0,0,8,0"
                                         Command="{Binding AuditStartupCommand}"/>
                                 <Button Content="Check connections" Margin="0,0,8,0"

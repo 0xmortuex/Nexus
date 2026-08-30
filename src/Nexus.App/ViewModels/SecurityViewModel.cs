@@ -148,6 +148,7 @@ public sealed class SecurityViewModel : ViewModelBase
         AuditSystemSettingsCommand = new RelayCommand(AuditSystemSettings);
         AuditPostureCommand = new RelayCommand(AuditPosture);
         AuditExtensionsCommand = new RelayCommand(AuditExtensions);
+        ScanRunningCommand = new RelayCommand(async _ => await ScanRunningAsync(), _ => !IsScanning);
         FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
         SaveReportCommand = new RelayCommand(SaveReport);
         ClearHistoryCommand = new RelayCommand(() => { _history.Clear(); RefreshHistory(); });
@@ -205,6 +206,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand AuditSystemSettingsCommand { get; }
     public RelayCommand AuditPostureCommand { get; }
     public RelayCommand AuditExtensionsCommand { get; }
+    public RelayCommand ScanRunningCommand { get; }
     public RelayCommand FullScanCommand { get; }
     public RelayCommand SaveReportCommand { get; }
     public RelayCommand ClearHistoryCommand { get; }
@@ -663,6 +665,44 @@ public sealed class SecurityViewModel : ViewModelBase
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Status = $"Could not save the report: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Check the programs running right now.
+    ///
+    /// Behaviour monitoring only sees processes as they start, so anything already
+    /// running before Nexus was installed has never been looked at — which is exactly
+    /// where something that wanted to stay would be.
+    /// </summary>
+    private async Task ScanRunningAsync()
+    {
+        IsScanning = true;
+        _scanCancellation = new CancellationTokenSource();
+
+        try
+        {
+            Status = "Checking the programs running right now…";
+
+            int notable = await _sentinel.ScanRunningProgramsAsync(_scanCancellation.Token)
+                .ConfigureAwait(false);
+
+            Status = notable == 0
+                ? "Checked every program running now. Nothing worth flagging. Nothing was changed."
+                : $"Checked the programs running now and found {notable} worth a look. Nothing was " +
+                  "stopped or changed — read the reasons and decide for yourself.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Stopped. Nothing was changed.";
+        }
+        finally
+        {
+            IsScanning = false;
+            _scanCancellation?.Dispose();
+            _scanCancellation = null;
+            RefreshFindings();
+            RefreshHistory();
         }
     }
 

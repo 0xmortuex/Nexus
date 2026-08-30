@@ -496,6 +496,106 @@ public sealed class SentinelService : IDisposable
         return notable;
     }
 
+    /// <summary>
+    /// Check the programs running right now.
+    ///
+    /// Behaviour monitoring watches processes as they *start*, which means everything
+    /// already running when Nexus was installed — or when protection was last switched
+    /// on — has never been looked at. That is exactly where something persistent would
+    /// be sitting, and it is the gap a scheduled file scan does not close either,
+    /// because it has no reason to prefer the handful of images that are actually
+    /// executing.
+    ///
+    /// Each distinct image is scanned once, not once per process: a machine with forty
+    /// svchost.exe instances should produce one answer about svchost.exe, and the
+    /// verdict cache would swallow the repeats anyway.
+    ///
+    /// Reads the files backing running processes. It does not read process memory,
+    /// open handles into other processes, or touch anything that is running.
+    /// </summary>
+    /// <returns>How many distinct programs are worth a look.</returns>
+    public async Task<int> ScanRunningProgramsAsync(CancellationToken cancellationToken = default)
+    {
+        var started = DateTimeOffset.Now;
+        var images = RunningImagePaths();
+
+        int notable = 0;
+        int scanned = 0;
+        bool completed = true;
+
+        try
+        {
+            foreach (var image in images)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (Exclusions.IsExcluded(image))
+                    continue;
+
+                var verdict = await ScanFileAsync(image, cancellationToken).ConfigureAwait(false);
+                scanned++;
+
+                if (verdict.WarrantsAlert)
+                    notable++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            completed = false;
+        }
+        finally
+        {
+            _history.Record(new ScanRun
+            {
+                StartedAt = started,
+                Kind = ScanKind.RunningPrograms,
+                Target = "programs running now",
+                FilesScanned = scanned,
+                Findings = notable,
+                DurationSeconds = (DateTimeOffset.Now - started).TotalSeconds,
+                Completed = completed,
+            });
+        }
+
+        _log.Info("Sentinel",
+            $"Checked {scanned} distinct program(s) currently running; {notable} worth a look.");
+
+        return notable;
+    }
+
+    /// <summary>
+    /// The distinct files backing the processes running right now.
+    ///
+    /// Reading a process's path fails for protected and higher-integrity processes,
+    /// and that is normal rather than notable — it is silently skipped. A security
+    /// tool that logs a warning for every system process it cannot open produces a
+    /// hundred lines of noise per scan and teaches the user the log is worthless.
+    /// </summary>
+    private static IReadOnlyList<string> RunningImagePaths()
+    {
+        var paths = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var process in System.Diagnostics.Process.GetProcesses())
+        {
+            try
+            {
+                if (process.MainModule?.FileName is { Length: > 0 } path && File.Exists(path))
+                    paths.Add(path);
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception
+                                          or InvalidOperationException or NotSupportedException)
+            {
+                // Protected process, or it exited between enumeration and the question.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return [.. paths];
+    }
+
     /// <summary>The drives a full scan covers. Anything not ready is skipped rather
     /// than throwing — an empty card reader should not end a scan.</summary>
     public static IReadOnlyList<string> FixedDriveRoots()

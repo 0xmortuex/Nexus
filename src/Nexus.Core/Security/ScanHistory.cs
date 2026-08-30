@@ -11,6 +11,7 @@ public enum ScanKind
     FullDisk,
     RemovableDrive,
     SingleFile,
+    RunningPrograms,
 }
 
 /// <summary>
@@ -40,6 +41,7 @@ public sealed record ScanRun
         ScanKind.FullDisk => $"Full scan: {Target}",
         ScanKind.RemovableDrive => $"USB drive {Target}",
         ScanKind.SingleFile => $"One file: {Target}",
+        ScanKind.RunningPrograms => "Programs running at the time",
         _ => Target,
     };
 
