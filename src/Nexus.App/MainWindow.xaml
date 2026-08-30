@@ -622,6 +622,38 @@
                     <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,10"
                                Text="These settings target DPC/interrupt latency and timer behaviour. Most take effect after a reboot, several are hardware-specific, and gains vary a lot between systems — benchmark, and revert anything that doesn't help."/>
 
+                    <GroupBox Header="Measure — before and after">
+                        <StackPanel>
+                            <TextBlock Text="{Binding MeasureStatus}" Style="{StaticResource DimText}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="Capture baseline" Margin="0,0,8,0"
+                                        Command="{Binding CaptureBaselineCommand}"/>
+                                <Button Content="Measure and compare" Margin="0,0,8,0"
+                                        Command="{Binding CompareCommand}"/>
+                                <Button Content="Stop" Margin="0,0,8,0"
+                                        Command="{Binding CancelMeasureCommand}"/>
+                                <Button Content="Clear baselines"
+                                        Command="{Binding ClearBaselinesCommand}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding BaselineSummary}" Style="{StaticResource DimText}"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="What this measures: how late Windows is when it wakes a sleeping thread. It is a property of the system, not of any game — Nexus will not hook a game's render loop, because that is what cheats do and it gets accounts banned. Run both measurements under the same conditions or the comparison means nothing."/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Is anything holding the CPU back?">
+                        <StackPanel>
+                            <TextBlock Text="{Binding MachineState}" Style="{StaticResource DimText}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <Button Content="Check CPU speed limits" HorizontalAlignment="Left"
+                                    Command="{Binding CheckMachineStateCommand}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Reads the enforced clock ceiling from the power subsystem. If the limit comes from your power plan, Nexus can fix it. If it comes from the firmware — heat, power delivery, a vendor setting — no software tweak will raise it, and Nexus will say so rather than sell you one."/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="System timer resolution">
                         <StackPanel>
                             <CheckBox Content="Hold the finest timer resolution (≈0.5 ms)" IsChecked="{Binding HighTimerResolution}"/>

@@ -2,11 +2,13 @@ using System.Windows;
 using Nexus.App.Interop;
 using Nexus.App.Interop.Security;
 using Nexus.App.Services;
+using Nexus.App.Services.Performance;
 using Nexus.App.Services.Security;
 using Nexus.App.TweaksImpl;
 using Nexus.App.ViewModels;
 using Nexus.Core.GameMode;
 using Nexus.Core.Logging;
+using Nexus.Core.Performance;
 using Nexus.Core.Persistence;
 using Nexus.Core.Rules;
 using Nexus.Core.Security;
@@ -88,6 +90,12 @@ public partial class App : System.Windows.Application
         var recovery = new CrashRecoveryService(journal, api, power, log);
         idleSaver.IsSuppressed = () => gameMode.IsActive;
 
+        // ---- Performance measurement: makes "measure before trusting" executable ----
+        var latencyProbe = new LatencyProbeService(log);
+        var throttleDetector = new ThrottleDetectorService(log);
+        var baselines = new BaselineStore(paths);
+        var benchmark = new BenchmarkService(latencyProbe, baselines, throttleDetector, log);
+
         // ---- Sentinel: the advisory security module ----
         // Constructed after the optimizer engines because it observes them (it audits
         // Nexus's own IFEO keys and scheduled task) rather than being exempt from them.
@@ -153,7 +161,7 @@ public partial class App : System.Windows.Application
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
             Security = new SecurityViewModel(sentinel, quarantine, quarantineJournal, trustStore),
-            Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic),
+            Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic, benchmark, baselines),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),
             RestoreDefaultsCommand = new RelayCommand(() =>

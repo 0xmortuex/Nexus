@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using Nexus.App.Services;
+using Nexus.App.Services.Performance;
+using Nexus.Core.Performance;
 
 namespace Nexus.App.ViewModels;
 
@@ -83,6 +85,16 @@ public sealed class LatencyViewModel : ViewModelBase
     private readonly BootTimerService _bootTimer;
     private readonly InterruptTuningService _interrupts;
     private readonly NicTuningService _nic;
+    private readonly BenchmarkService _benchmark;
+    private readonly BaselineStore _baselines;
+
+    private CancellationTokenSource? _measureCancellation;
+    private bool _isMeasuring;
+    private string _measureStatus =
+        "Measure how punctually Windows wakes a thread, change something, then measure again. " +
+        "The comparison is allowed to say \"no measurable difference\" — and usually will, which is " +
+        "the point of measuring rather than trusting.";
+    private string _machineState = "Not checked yet.";
 
     public ObservableCollection<BootTimerRow> BootSettings { get; } = [];
     public ObservableCollection<InterruptDeviceRow> Devices { get; } = [];
@@ -92,12 +104,27 @@ public sealed class LatencyViewModel : ViewModelBase
         TimerResolutionService timer,
         BootTimerService bootTimer,
         InterruptTuningService interrupts,
-        NicTuningService nic)
+        NicTuningService nic,
+        BenchmarkService benchmark,
+        BaselineStore baselines)
     {
         _timer = timer;
         _bootTimer = bootTimer;
         _interrupts = interrupts;
         _nic = nic;
+        _benchmark = benchmark;
+        _baselines = baselines;
+
+        CaptureBaselineCommand = new RelayCommand(async () => await CaptureBaselineAsync(), () => !IsMeasuring);
+        CompareCommand = new RelayCommand(async () => await CompareAsync(), () => !IsMeasuring);
+        CancelMeasureCommand = new RelayCommand(() => _measureCancellation?.Cancel(), () => IsMeasuring);
+        CheckMachineStateCommand = new RelayCommand(CheckMachineState);
+        ClearBaselinesCommand = new RelayCommand(() =>
+        {
+            _baselines.Clear();
+            MeasureStatus = "Saved baselines cleared.";
+            OnPropertyChanged(nameof(BaselineSummary));
+        });
 
         foreach (var setting in BootTimerService.Settings)
             BootSettings.Add(new BootTimerRow(setting, bootTimer));
@@ -155,5 +182,112 @@ public sealed class LatencyViewModel : ViewModelBase
                 OnPropertyChanged(nameof(NicStatus));
             });
         });
+    }
+
+    // ---- Measurement ("measure before trusting", made executable) ----
+
+    public bool IsMeasuring
+    {
+        get => _isMeasuring;
+        private set
+        {
+            if (Set(ref _isMeasuring, value))
+                OnPropertyChanged(nameof(CanMeasure));
+        }
+    }
+
+    public bool CanMeasure => !IsMeasuring;
+
+    public string MeasureStatus
+    {
+        get => _measureStatus;
+        private set => Set(ref _measureStatus, value);
+    }
+
+    public string MachineState
+    {
+        get => _machineState;
+        private set => Set(ref _machineState, value);
+    }
+
+    public string BaselineSummary
+    {
+        get
+        {
+            var baseline = _baselines.Latest(BenchmarkService.DefaultLabel);
+            return baseline is null
+                ? "No baseline saved yet."
+                : $"Baseline from {baseline.CapturedAt.ToLocalTime():g}: " +
+                  $"median {baseline.Summary.MedianMs:0.000} ms late, " +
+                  $"worst 1% {baseline.Summary.P99Ms:0.000} ms ({baseline.Summary.SampleCount:N0} samples).";
+        }
+    }
+
+    public RelayCommand CaptureBaselineCommand { get; } = null!;
+    public RelayCommand CompareCommand { get; } = null!;
+    public RelayCommand CancelMeasureCommand { get; } = null!;
+    public RelayCommand CheckMachineStateCommand { get; } = null!;
+    public RelayCommand ClearBaselinesCommand { get; } = null!;
+
+    private async Task CaptureBaselineAsync()
+    {
+        IsMeasuring = true;
+        _measureCancellation = new CancellationTokenSource();
+
+        try
+        {
+            MeasureStatus = "Measuring… leave the machine alone for a few seconds.";
+            var run = await _benchmark.CaptureBaselineAsync(
+                cancellationToken: _measureCancellation.Token);
+
+            MeasureStatus = "Baseline saved. " + LatencyProbeService.Describe(run.Summary);
+            OnPropertyChanged(nameof(BaselineSummary));
+        }
+        catch (OperationCanceledException)
+        {
+            MeasureStatus = "Measurement stopped. The previous baseline is untouched.";
+        }
+        finally
+        {
+            EndMeasurement();
+        }
+    }
+
+    private async Task CompareAsync()
+    {
+        IsMeasuring = true;
+        _measureCancellation = new CancellationTokenSource();
+
+        try
+        {
+            MeasureStatus = "Measuring… leave the machine alone for a few seconds.";
+            var (run, comparison) = await _benchmark.CompareAgainstBaselineAsync(
+                cancellationToken: _measureCancellation.Token);
+
+            MeasureStatus = comparison is null
+                ? "There was no baseline, so this run has been saved as one. Change something, then " +
+                  "compare again."
+                : $"{comparison.Explanation} " +
+                  $"(now: {LatencyProbeService.Describe(run.Summary)})";
+
+            OnPropertyChanged(nameof(BaselineSummary));
+        }
+        catch (OperationCanceledException)
+        {
+            MeasureStatus = "Measurement stopped.";
+        }
+        finally
+        {
+            EndMeasurement();
+        }
+    }
+
+    private void CheckMachineState() => MachineState = _benchmark.DescribeMachineState();
+
+    private void EndMeasurement()
+    {
+        IsMeasuring = false;
+        _measureCancellation?.Dispose();
+        _measureCancellation = null;
     }
 }

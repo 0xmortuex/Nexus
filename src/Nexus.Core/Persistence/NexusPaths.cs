@@ -33,6 +33,9 @@ public sealed class NexusPaths
     /// <summary>Cached verdicts, keyed by content hash.</summary>
     public string VerdictCacheFile => Path.Combine(SecurityDirectory, "verdict-cache.json");
 
+    // ---- Performance measurement ----
+    public string BaselinesFile => Path.Combine(Root, "baselines.json");
+
     /// <summary>YARA rule files and the ONNX model ship beside the executable, not in
     /// %APPDATA% — they are program assets, and keeping them out of a user-writable
     /// directory means a non-admin cannot swap the detection logic.</summary>
