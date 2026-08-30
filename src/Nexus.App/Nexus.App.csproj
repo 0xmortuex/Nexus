@@ -37,6 +37,12 @@
                       Private="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Detection data lives beside the executable, not in %APPDATA%: keeping it out
+         of a user-writable directory means a non-admin cannot swap the rules. -->
+    <Content Include="assets\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Put Nexus.Scanner.exe beside Nexus.exe, which is where ScannerHost looks for
        it. If it is missing, Sentinel drops file scanning and says so rather than
        failing silently. -->

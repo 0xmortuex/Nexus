@@ -101,7 +101,11 @@ public static class Program
         }
 
         var signals = new List<ScanSignal>();
-        var consulted = new List<string>();
+
+        // A set, not a list: several engines share one SignalSource (PE structure and
+        // byte patterns are both StaticRules), and reporting a source twice would
+        // overstate how many independent opinions the host actually got.
+        var consulted = new SortedSet<string>(StringComparer.Ordinal);
 
         foreach (var engine in engines)
         {
@@ -134,7 +138,7 @@ public static class Program
         {
             Id = request.Id,
             Signals = signals,
-            EnginesConsulted = consulted,
+            EnginesConsulted = consulted.ToArray(),
         };
     }
 

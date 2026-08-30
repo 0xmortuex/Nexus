@@ -90,3 +90,64 @@ temperature monitoring, and "AI" auto-tuning — are excluded on purpose:
 
 So: **full parity on everything that actually changes system behavior**, with three
 documented, principled exclusions that are about safety, not capability.
+
+---
+
+# Feature parity: Sentinel vs mainstream antivirus
+
+Same accounting, applied to the security module. "✅" = implemented and wired to
+the UI; "⚠️" = implemented with a documented caveat; "❌ (can't)" = blocked by a
+gate this project cannot pass; "❌ (won't)" = a conscious decision not to build it.
+
+## Detection
+
+| AV capability | Sentinel | Where / why |
+|---|---|---|
+| On-demand file scanning | ✅ | `SentinelService.ScanFileAsync`, Security tab |
+| Folder / full-disk scanning | ✅ | `ScanFolderAsync`, streams verdicts as it goes |
+| Hash reputation (known-good / known-bad) | ⚠️ | `ReputationService` — local lists only; supply your own. Online lookup is deliberately not wired in |
+| Authenticode signature verification | ✅ | `AuthenticodeVerifier` over WinVerifyTrust |
+| PE structure heuristics | ✅ | `PeHeuristics`: entropy, W+X sections, import capability groups, packer names, entry-point sanity |
+| Byte-pattern signatures | ✅ | `PatternEngine`, `assets/patterns.txt` |
+| YARA rules | ❌ (not yet) | needs a native library shipped and a rule set chosen; reports itself unavailable rather than faking it |
+| ML / PE classifier | ❌ (not yet) | needs a model evaluated against a real false-positive budget; an unevaluated one is confident-sounding noise |
+| Behaviour monitoring | ⚠️ | `BehaviorEngine` — masquerading, LOLBins, document-spawned shells, encoded command lines. WMI-polled, so very short-lived processes are missed |
+| Startup / persistence audit | ✅ | Run keys, startup folders, services, IFEO, Winlogon, AppInit_DLLs, WMI subscriptions, scheduled tasks |
+| Ransomware behaviour detection | ⚠️ | shadow-copy deletion, backup deletion and recovery-disabling are detected and reported — but reported only, after the fact |
+| Script / macro inspection (AMSI) | ❌ (not yet) | needs an AMSI provider DLL and an Authenticode certificate |
+| Archive / installer unpacking | ❌ (not yet) | overlay size is reported; contents are not extracted |
+| Rootkit scanning | ❌ (can't) | requires kernel visibility |
+| Email / web / phishing filtering | ❌ (won't) | suite bloat, not protection. The browser and mail client already do this better |
+| Firewall, VPN, password manager | ❌ (won't) | same |
+
+## Response
+
+| AV capability | Sentinel | Where / why |
+|---|---|---|
+| Explaining *why* something was flagged | ✅ | every verdict carries its signals and a score out of 100 — the module's whole point |
+| Quarantine with restore | ✅ | `QuarantineService` + write-ahead journal; moves, never deletes |
+| User allowlist | ✅ | `TrustStore`, keyed on content hash so edits revoke trust |
+| Real-time on-access blocking | ❌ (can't) | needs a filesystem minifilter driver: Microsoft altitude allocation, EV certificate, attestation signing |
+| Blocking an execution | ❌ (can't, and won't) | needs the same driver. Also the explicit design choice: Sentinel reports and leaves the decision to you |
+| Automatic quarantine / removal | ❌ (won't) | every destructive action requires a `UserConsent` token minted in a click handler. This is enforced by the type system, not by policy |
+| Self-protection against tampering | ❌ (can't) | needs kernel object callbacks |
+| Registering as the system antivirus | ❌ (can't) | needs Microsoft Virus Initiative membership: an established company with independent lab certification |
+| Replacing Microsoft Defender | ❌ (won't) | follows from the above, and would be a security downgrade. Run both |
+
+## Summary
+
+Sentinel implements the **detection and explanation** half of an antivirus against
+real Windows APIs, and deliberately implements none of the **enforcement** half.
+
+The exclusions split cleanly in two:
+
+- **Can't**: everything requiring a signed kernel driver or Microsoft Virus
+  Initiative membership — on-access blocking, self-protection, rootkit scanning,
+  PPL, replacing Defender. These are commercial and organisational gates, not
+  engineering ones.
+- **Won't**: automatic action, and the suite bloat (VPN, password manager, web
+  filtering) that ships alongside mainstream AV without improving detection.
+
+The "can't" list is exactly the set of things that exist to let software *block*.
+Because Sentinel reports instead, none of them are on its critical path — the
+design turns the project's hardest constraint into its defining feature.

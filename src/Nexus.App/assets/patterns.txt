@@ -1,0 +1,17 @@
+# Nexus Sentinel — byte-pattern signatures
+#
+# Format: name | weight | pattern | description
+#   weight  : Informational | Weak | Moderate | Strong   (Decisive is demoted to Strong;
+#             a literal byte sequence appears in benign files too)
+#   pattern : hex:4D5A9000   or   text:some literal string   (minimum 4 bytes)
+#
+# The description is shown to the user verbatim, so write it in plain language and
+# describe what was observed rather than what it means.
+#
+# This file ships with one rule: the EICAR test string, so you can verify Sentinel
+# actually works. It is stored as hex rather than text so that this rule file does
+# not itself get quarantined by Microsoft Defender.
+
+eicar-test | Strong | hex:45494341522D5354414E444152442D414E544956495255532D544553542D46494C4521 | Contains the EICAR test string. This is the harmless industry-standard file used to check that a scanner is working — it is not malware.
+
+# Add your own rules below.
