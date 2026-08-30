@@ -141,15 +141,16 @@ public sealed class KnownGoodBaselineService
 
     private BaselineResult Save(IReadOnlySet<string> hashes, int examined)
     {
-        var text = HashListFile.Write(
-            hashes,
-            $"Built from this machine's validly-signed binaries in {string.Join(", ", BaselineFolders())}",
-            DateTimeOffset.Now);
-
         try
         {
             Directory.CreateDirectory(_paths.SecurityDirectory);
-            File.WriteAllText(_paths.GeneratedKnownGoodFile, text);
+
+            using var writer = new StreamWriter(_paths.GeneratedKnownGoodFile, append: false);
+            HashListFile.WriteTo(
+                writer,
+                hashes,
+                $"Built from this machine's validly-signed binaries in {string.Join(", ", BaselineFolders())}",
+                DateTimeOffset.Now);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -58,6 +58,7 @@ public sealed class SecurityViewModel : ViewModelBase
     private readonly TrustStore _trust;
     private readonly ScheduledScanService _scheduledScan;
     private readonly KnownGoodBaselineService _baseline;
+    private readonly HashFeedImportService _feeds;
 
     private CancellationTokenSource? _scanCancellation;
     private string _defenderStatus = "Checking Microsoft Defender…";
@@ -76,7 +77,8 @@ public sealed class SecurityViewModel : ViewModelBase
         QuarantineJournal journal,
         TrustStore trust,
         ScheduledScanService scheduledScan,
-        KnownGoodBaselineService baseline)
+        KnownGoodBaselineService baseline,
+        HashFeedImportService feeds)
     {
         _sentinel = sentinel;
         _quarantine = quarantine;
@@ -84,6 +86,7 @@ public sealed class SecurityViewModel : ViewModelBase
         _trust = trust;
         _scheduledScan = scheduledScan;
         _baseline = baseline;
+        _feeds = feeds;
 
         _sentinel.AlertsChanged += RefreshFindings;
         _journal.Changed += RefreshQuarantine;
@@ -100,6 +103,7 @@ public sealed class SecurityViewModel : ViewModelBase
         RefreshProtectionCommand = new RelayCommand(RefreshProtection);
         DismissRansomwareAlarmCommand = new RelayCommand(DismissRansomwareAlarm);
         BuildBaselineCommand = new RelayCommand(async _ => await BuildBaselineAsync(), _ => !IsScanning);
+        ImportFeedCommand = new RelayCommand(async p => await ImportFeedAsync(p as string), _ => !IsScanning);
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
@@ -150,6 +154,47 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand RefreshProtectionCommand { get; }
     public RelayCommand DismissRansomwareAlarmCommand { get; }
     public RelayCommand BuildBaselineCommand { get; }
+    public RelayCommand ImportFeedCommand { get; }
+
+    /// <summary>Pre-filled in the UI so the common case is one click.</summary>
+    public string DefaultFeedUrl => HashFeedImportService.DefaultFeedUrl;
+
+    /// <summary>
+    /// Import a public known-bad hash list.
+    ///
+    /// This is the only outbound request Sentinel ever makes, and it downloads a
+    /// published list — it sends nothing about the user's files. It happens only when
+    /// this button is pressed.
+    /// </summary>
+    private async Task ImportFeedAsync(string? source)
+    {
+        if (source is not { Length: > 0 })
+        {
+            Status = "Give a file path or an http(s) address to import from.";
+            return;
+        }
+
+        IsScanning = true;
+        _scanCancellation = new CancellationTokenSource();
+
+        try
+        {
+            Status = $"Importing from {source}…";
+            var result = await _feeds.ImportAsync(source, _scanCancellation.Token);
+            Status = result.Message;
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Import stopped. Any list you already had is untouched.";
+        }
+        finally
+        {
+            IsScanning = false;
+            _scanCancellation?.Dispose();
+            _scanCancellation = null;
+            RefreshProtection();
+        }
+    }
 
     /// <summary>
     /// Record every validly-signed binary on this machine as known-good.

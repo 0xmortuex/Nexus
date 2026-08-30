@@ -69,27 +69,37 @@ public static class HashListFile
     }
 
     /// <summary>
-    /// Render a list with a header explaining where it came from.
+    /// Write a list with a header explaining where it came from.
     ///
-    /// The header is not decoration. A known-good list silently exonerates every file
-    /// it contains, so anyone looking at one later needs to know what produced it and
-    /// when — a baseline built from a machine that was already compromised is worth
-    /// knowing about.
+    /// Streams to a <see cref="TextWriter"/> rather than building a string, because
+    /// the real feeds are big: abuse.ch's full MalwareBazaar export is over a million
+    /// hashes, which is roughly 74 MB of text. Materialising that as one string, on
+    /// top of the sorted array, is a memory spike with no purpose.
+    ///
+    /// The header is not decoration. A hash list silently decides the fate of every
+    /// file it matches, so anyone reading one later needs to know what produced it and
+    /// when — a known-good baseline built from a machine that was already compromised
+    /// is worth being able to spot.
     /// </summary>
-    public static string Write(IEnumerable<string> hashes, string provenance, DateTimeOffset generatedAt)
+    public static void WriteTo(
+        TextWriter writer, IEnumerable<string> hashes, string provenance, DateTimeOffset generatedAt)
     {
-        var builder = new StringBuilder();
-
-        builder.AppendLine("# Nexus Sentinel hash list");
-        builder.AppendLine("# " + provenance);
-        builder.AppendLine($"# Generated {generatedAt:u}");
-        builder.AppendLine("#");
-        builder.AppendLine("# One lowercase hex SHA-256 per line. Delete this file to discard it.");
-        builder.AppendLine();
+        writer.WriteLine("# Nexus Sentinel hash list");
+        writer.WriteLine("# " + provenance);
+        writer.WriteLine($"# Generated {generatedAt:u}");
+        writer.WriteLine("#");
+        writer.WriteLine("# One lowercase hex SHA-256 per line. Delete this file to discard it.");
+        writer.WriteLine();
 
         foreach (var hash in hashes.Where(IsSha256Hex).Select(h => h.ToLowerInvariant()).Order(StringComparer.Ordinal))
-            builder.AppendLine(hash);
+            writer.WriteLine(hash);
+    }
 
-        return builder.ToString();
+    /// <summary>Convenience overload for small lists and for tests.</summary>
+    public static string Write(IEnumerable<string> hashes, string provenance, DateTimeOffset generatedAt)
+    {
+        using var writer = new StringWriter();
+        WriteTo(writer, hashes, provenance, generatedAt);
+        return writer.ToString();
     }
 }

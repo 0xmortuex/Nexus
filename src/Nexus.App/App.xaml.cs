@@ -103,6 +103,7 @@ public partial class App : System.Windows.Application
         var signatures = new AuthenticodeVerifier(log);
         var fileIdentity = new FileIdentityService(log);
         var baselineBuilder = new KnownGoodBaselineService(log, paths, signatures, fileIdentity);
+        var hashFeeds = new HashFeedImportService(log, paths);
         var reputation = new ReputationService(log, paths);
         var scannerHost = new ScannerHost(log);
         var autoruns = new AutorunEnumerator(log, signatures);
@@ -178,7 +179,8 @@ public partial class App : System.Windows.Application
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
             Security = new SecurityViewModel(
-                sentinel, quarantine, quarantineJournal, trustStore, scheduledScan, baselineBuilder),
+                sentinel, quarantine, quarantineJournal, trustStore, scheduledScan,
+                baselineBuilder, hashFeeds),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic, benchmark, baselines),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),

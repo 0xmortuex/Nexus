@@ -65,8 +65,8 @@ public sealed class SentinelResetService
         // 2. The tripwires are real files in the user's own folders.
         failures.AddRange(_ransomware.RemoveCanaries());
 
-        // 3. The generated known-good baseline is a real file Nexus wrote.
-        failures.AddRange(RemoveGeneratedBaseline());
+        // 3. Hash lists Nexus generated or downloaded are real files it wrote.
+        failures.AddRange(RemoveGeneratedHashLists());
 
         // 4. Bookkeeping.
         _trust.Clear();
@@ -82,21 +82,24 @@ public sealed class SentinelResetService
         return failures;
     }
 
-    private IReadOnlyList<string> RemoveGeneratedBaseline()
+    private IReadOnlyList<string> RemoveGeneratedHashLists()
     {
-        var path = _paths.GeneratedKnownGoodFile;
+        var failures = new List<string>();
 
-        try
+        foreach (var path in new[] { _paths.GeneratedKnownGoodFile, _paths.ImportedKnownBadFile })
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failures.Add($"Hash list: could not remove {path} — {ex.Message}");
+            }
+        }
 
-            return [];
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return [$"Known-good baseline: could not remove {path} — {ex.Message}"];
-        }
+        return failures;
     }
 
     private IReadOnlyList<string> RestoreQuarantinedFiles()

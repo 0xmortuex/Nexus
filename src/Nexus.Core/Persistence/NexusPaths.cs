@@ -35,6 +35,10 @@ public sealed class NexusPaths
     /// runtime and the install directory is not writable for a normal user.</summary>
     public string GeneratedKnownGoodFile => Path.Combine(SecurityDirectory, "known-good-local.txt");
 
+    /// <summary>Known-bad hashes imported from a public feed. User data, because it
+    /// is fetched at runtime and refreshed independently of the install.</summary>
+    public string ImportedKnownBadFile => Path.Combine(SecurityDirectory, "known-bad-imported.txt");
+
     /// <summary>Cached verdicts, keyed by content hash.</summary>
     public string VerdictCacheFile => Path.Combine(SecurityDirectory, "verdict-cache.json");
 

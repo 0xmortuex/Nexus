@@ -577,6 +577,23 @@
                         </StackPanel>
                     </GroupBox>
 
+                    <GroupBox Header="Known-bad hash list">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="The other half of reputation: a list of hashes that are known malware, so an exact match can be identified outright rather than merely looking odd. Paste a file path, or an address to download from — the box is pre-filled with abuse.ch's MalwareBazaar export, which is public, free and needs no account."/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox x:Name="FeedUrlBox" Width="430" Margin="0,0,8,0"
+                                         VerticalContentAlignment="Center"
+                                         Text="{Binding DefaultFeedUrl, Mode=OneTime}"/>
+                                <Button Content="Import list"
+                                        Command="{Binding ImportFeedCommand}"
+                                        CommandParameter="{Binding Text, ElementName=FeedUrlBox}"/>
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="This is the only time Nexus ever reaches the internet, it only happens when you press this button, and it downloads a public list — nothing about your files is ever sent anywhere. If you would rather not let it connect at all, download the file yourself and give it the path instead."/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Microsoft Defender — the part that actually blocks">
                         <StackPanel>
                             <TextBlock Text="{Binding DefenderStatus}" Style="{StaticResource DimText}"

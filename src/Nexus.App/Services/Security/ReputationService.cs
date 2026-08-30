@@ -70,6 +70,7 @@ public sealed class ReputationService
         LoadInto(NexusPaths.KnownGoodHashFile, _knownGood, "known-good", replace: true);
         LoadInto(_paths.GeneratedKnownGoodFile, _knownGood, "known-good (this machine)", replace: false);
         LoadInto(Path.Combine(NexusPaths.AssetsDirectory, "known-bad.txt"), _knownBad, "known-bad", replace: true);
+        LoadInto(_paths.ImportedKnownBadFile, _knownBad, "known-bad (imported feed)", replace: false);
 
         if (!HasData)
         {
