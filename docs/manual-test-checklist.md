@@ -171,3 +171,58 @@ items marked **[hybrid]** need a P/E-core CPU (Intel 12th gen+), items marked
       anti-cheat processes (grep the log for "never-touch" refusals; no game kicks).
 - [ ] Kill wmiprvse mid-session → watcher fails over to polling without crashing.
 - [ ] Leave running 24 h: no unbounded memory growth (log ring is capped, sampler reuses buffers).
+
+## 8. Sentinel (security module)
+
+Nothing in this section can be verified on a build machine — it needs real Windows,
+a real registry, and real signed binaries. Automated coverage stops at the pure
+logic; everything below is the part that talks to the OS.
+
+### Scanning
+- [ ] Security tab renders; the "Nexus reports, it does not decide" banner is visible.
+- [ ] `Nexus.Scanner.exe` sits next to `Nexus.exe` after publish. Run
+      `Nexus.Scanner.exe --self-test` → prints "PE structure,byte patterns".
+- [ ] Scan `C:\Windows\System32` → signed Microsoft binaries come back **Trusted**,
+      not Unknown. (If they come back Unknown, WinVerifyTrust is failing — check the
+      app is elevated and `wintrust.dll` resolves.)
+- [ ] Create an EICAR test file (the standard 68-byte string) → scan reports it as
+      "Worth a look" or higher, quoting the EICAR rule, and **nothing is moved**.
+      Defender will likely quarantine the file first; that is expected.
+- [ ] Rename a `.txt` to `.exe` → reported as "named like a program but its contents
+      are not a Windows executable".
+- [ ] Scan a large folder (50k+ files) → the UI stays responsive, progress updates,
+      and "Stop" actually stops.
+- [ ] Kill `Nexus.Scanner.exe` mid-scan → the host restarts it and the scan continues.
+      After 5 kills, file scanning disables itself with a log message and the rest of
+      the app keeps working.
+
+### Startup audit
+- [ ] "Check startup items" completes without an unhandled exception on a machine with
+      third-party software installed.
+- [ ] Nexus's own scheduled task and any IFEO `PerfOptions` keys it wrote appear in the
+      results, marked as created by Nexus, scoring zero.
+- [ ] Winlogon `Shell` / `Userinit` at their Windows defaults are **not** flagged.
+- [ ] Unquoted service paths with spaces resolve to the right executable.
+- [ ] A machine with no WMI event subscriptions reports none rather than erroring.
+
+### Behaviour monitoring
+- [ ] `certutil -hashfile <file> SHA256` → **not** flagged (ordinary use).
+- [ ] `certutil -urlcache -split -f http://example.com/x` → flagged, and nothing is
+      blocked or killed.
+- [ ] Copy `cmd.exe` to `%TEMP%\svchost.exe` and run it → flagged as masquerading.
+- [ ] A Word document that spawns a shell → flagged as document-spawned shell.
+- [ ] Gaming session: no behaviour alerts fire on anti-cheat processes, and no
+      measurable frame-time impact from the WMI watcher.
+
+### Consent and quarantine
+- [ ] Quarantine a file in a normal folder → moved, restorable, original path preserved.
+- [ ] Try to quarantine something under `C:\Windows` → refused with an explanation,
+      **even after confirming**.
+- [ ] Try to quarantine an anti-cheat binary → refused (never-touch list).
+- [ ] Quarantine, then kill Nexus mid-move (a hard power-off is the real test) → on the
+      next start, reconciliation reports where the file ended up and prefers leaving
+      the original untouched.
+- [ ] Restore a quarantined file → back at its original path, byte-identical.
+- [ ] Trust a file, then modify its bytes → no longer trusted (trust is hash-keyed).
+- [ ] Leave the app idle overnight with monitoring on → no unbounded growth in the
+      behaviour engine's process map (capped at 4096).
