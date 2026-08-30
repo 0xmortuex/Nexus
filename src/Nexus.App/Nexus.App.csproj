@@ -55,4 +55,35 @@
           SkipUnchangedFiles="true"
           Condition="Exists('$(MSBuildThisFileDirectory)..\Nexus.Scanner\bin\$(Configuration)\net8.0')" />
   </Target>
+
+  <!-- Publish is a separate pipeline from Build, so the copy above does NOT cover it:
+       without this target the shipped folder contains no scanner at all and file
+       scanning is silently absent from the product.
+
+       The worker is published self-contained because Nexus.exe is: the runtime bundled
+       inside a single-file host is not usable by a second executable, so a
+       framework-dependent worker would fail to start on any machine without .NET
+       installed — exactly the machines self-contained publishing exists to serve.
+       Trimmed, it costs about 15 MB rather than the full 60. -->
+  <Target Name="PublishScannerWorker" AfterTargets="Publish">
+    <PropertyGroup>
+      <ScannerStagingDir>$(MSBuildThisFileDirectory)obj\scanner-publish\$(Configuration)\</ScannerStagingDir>
+    </PropertyGroup>
+
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\Nexus.Scanner\Nexus.Scanner.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishTrimmed=true;PublishDir=$(ScannerStagingDir)" />
+
+    <ItemGroup>
+      <ScannerPublished Include="$(ScannerStagingDir)Nexus.Scanner.exe" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(ScannerPublished)" DestinationFolder="$(PublishDir)" />
+
+    <!-- Fail the publish rather than shipping a build whose scanner is missing.
+         A silently disabled engine is the worst outcome: the product looks complete
+         and reports "unknown" on everything it should have had an opinion about. -->
+    <Error Condition="!Exists('$(PublishDir)Nexus.Scanner.exe')"
+           Text="Nexus.Scanner.exe was not published. Sentinel would ship without file scanning." />
+  </Target>
 </Project>
