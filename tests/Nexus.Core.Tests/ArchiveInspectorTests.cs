@@ -158,17 +158,43 @@ public class ArchiveInspectorTests
 
     // ---- Nested archives ----
 
+    /// <summary>
+    /// Nested archives used to be reported and skipped. They are now opened, because
+    /// putting the payload inside a second archive is the oldest way past a scanner
+    /// that stops at the container, and reporting "there is an archive in here" left
+    /// the obvious case unexamined.
+    ///
+    /// Opening is delegated to the caller's analyser — Core knows the limits, the
+    /// scanner worker knows how to open 7z and RAR — so from here the entry is handed
+    /// over like any other. What Core still guarantees is the budget and the depth cap.
+    /// </summary>
     [Theory]
     [InlineData("inner.zip")]
     [InlineData("inner.RAR")]
     [InlineData("payload.7z")]
-    public void Nested_archives_are_reported_rather_than_opened(string name)
+    public void A_nested_archive_is_handed_to_the_analyser_to_open(string name)
     {
         using var zip = BuildZip((name, Text("PK not really")));
 
         var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
 
-        Assert.Contains(signals, s => s.Code == "archive-nested");
+        Assert.Contains(signals, s => s.Code == "archive-echo");
+        Assert.DoesNotContain(signals, s => s.Code == "archive-nested-unopened");
+    }
+
+    /// <summary>
+    /// ...but only while the budget allows. Past the depth cap it goes back to being
+    /// reported and skipped, and the wording must not imply it was cleared.
+    /// </summary>
+    [Fact]
+    public void Past_the_depth_cap_a_nested_archive_is_reported_and_not_opened()
+    {
+        using var zip = BuildZip(("inner.zip", Text("PK not really")));
+
+        var budget = new ArchiveInspector.ArchiveBudget { Depth = ArchiveInspector.MaxNestingDepth };
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser, budget);
+
+        Assert.Contains(signals, s => s.Code == "archive-nested-unopened");
         Assert.DoesNotContain(signals, s => s.Code == "archive-echo");
     }
 
@@ -299,6 +325,86 @@ public class ArchiveInspectorTests
         foreach (var header in headers)
             for (int length = 0; length <= header.Length; length++)
                 ArchiveInspector.DetectFormat(header.AsSpan(0, length));
+    }
+
+    // ---- Nesting ----
+
+    /// <summary>
+    /// One budget for the whole file, shared by every level. A fresh allowance per
+    /// level would let nested archives multiply the expansion ceiling, turning the
+    /// zip-bomb defence into a zip-bomb amplifier.
+    /// </summary>
+    [Fact]
+    public void A_nested_archive_spends_the_same_budget_as_its_parent()
+    {
+        var budget = new ArchiveInspector.ArchiveBudget();
+
+        ArchiveInspector.InspectEntries(
+            [Entry("a.txt", 1000, 500), Entry("b.txt", 1000, 500)],
+            static (_, _) => [],
+            budget);
+
+        Assert.Equal(2, budget.EntriesExamined);
+
+        // A second archive, handed the same budget, continues from where it left off.
+        ArchiveInspector.InspectEntries([Entry("c.txt", 1000, 500)], static (_, _) => [], budget);
+
+        Assert.Equal(3, budget.EntriesExamined);
+    }
+
+    [Fact]
+    public void Descent_stops_at_the_depth_limit()
+    {
+        var budget = new ArchiveInspector.ArchiveBudget();
+
+        Assert.True(budget.CanDescend);
+
+        budget.Depth = ArchiveInspector.MaxNestingDepth;
+        Assert.False(budget.CanDescend);
+    }
+
+    [Fact]
+    public void An_exhausted_budget_stops_descent_even_at_depth_zero()
+    {
+        var budget = new ArchiveInspector.ArchiveBudget
+        {
+            EntriesExamined = ArchiveInspector.MaxEntries,
+        };
+
+        Assert.True(budget.Exhausted);
+        Assert.False(budget.CanDescend);
+    }
+
+    /// <summary>An archive too deep to open must be reported, never silently dropped:
+    /// unexamined is not the same as clean.</summary>
+    [Fact]
+    public void An_unopened_nested_archive_is_reported()
+    {
+        var budget = new ArchiveInspector.ArchiveBudget { Depth = ArchiveInspector.MaxNestingDepth };
+
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry("payload.zip", 5000, 2000)], static (_, _) => [], budget);
+
+        var signal = Assert.Single(signals, s => s.Code == "archive-nested-unopened");
+        Assert.Contains("not been cleared", signal.Explanation);
+    }
+
+    /// <summary>
+    /// Codes are what suppression and tests match on, so the prefix is applied once
+    /// however deep the nesting goes -- never "archive-archive-script-...".
+    /// </summary>
+    [Fact]
+    public void The_archive_prefix_is_not_applied_twice()
+    {
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry("inner", 100, 50)],
+            static (_, _) =>
+            [
+                new SecuritySignal(SignalSource.StaticRules, SignalWeight.Weak,
+                    "archive-script-download-and-run", "Already came from an archive."),
+            ]);
+
+        Assert.Equal("archive-script-download-and-run", Assert.Single(signals).Code);
     }
 
     // ---- The shared limits apply to every format ----

@@ -121,7 +121,7 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Ransomware behaviour detection | ⚠️ | shadow-copy deletion, backup deletion and recovery-disabling are detected and reported — but reported only, after the fact |
 | Script obfuscation analysis | ✅ | `ScriptAnalyzer`: PowerShell/batch/VBScript/JScript/HTA, UTF-16 aware |
 | Live script inspection (AMSI) | ❌ (not yet) | in-memory scripts need an AMSI provider DLL and an Authenticode certificate; files on disk are covered |
-| Archive inspection | ⚠️ | ZIP, 7z, RAR, tar, gzip, bzip2 and xz, detected by magic bytes and read under shared limits. Nested archives are reported, not opened; password-protected ones are reported as such rather than as clean |
+| Archive inspection | ✅ | ZIP, 7z, RAR, tar, gzip, bzip2 and xz, detected by magic bytes. Archives inside archives are opened two levels deep, spending one budget shared across every level so nesting cannot multiply the limits; deeper ones are reported as unopened. Password-protected archives are reported as unread rather than as clean |
 | Ransomware canaries + mass-change detection | ✅ | `RansomwareGuardService` + `MassChangeDetector` |
 | Network connection monitoring | ✅ | `NetworkMonitorService` via GetExtendedTcpTable, sampled every 10s into a `ConnectionHistory` while protection is on, so a connection that opens and closes between looks is still recorded. Kept in memory only |
 | Antivirus health / exclusion auditing | ✅ | `DefenderHealthService` — reports on Defender rather than replacing it. Nexus audits its own exclusions to the same standard |

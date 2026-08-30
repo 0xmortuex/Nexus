@@ -169,6 +169,19 @@ limit checks, so the entry cap, expansion cap, traversal check and zip-bomb rati
 apply identically to every format. The limits are not reimplemented per format; that
 is how one copy quietly ends up missing a check.
 
+Archives inside archives are opened, two levels deep. Putting the payload in a second
+archive is the oldest way past a scanner that stops at the container, and reporting
+"there is an archive in here" left the obvious case unexamined.
+
+The recursion is bounded twice: by depth, and by a single budget shared across every
+level. Sharing the budget is what makes it safe — a fresh allowance per level would
+let ten nested archives multiply the expansion ceiling tenfold, turning the zip-bomb
+defence into a zip-bomb amplifier. Anything too deep, or reached after the budget is
+spent, is reported as unopened, because unexamined is not the same as clean.
+
+Findings name the whole path to the payload: "Inside the archive, test.7z: inside the
+archive, dropper.ps1: this script downloads something from the internet and runs it".
+
 A password-protected archive is reported as password-protected, not as corrupt. The
 difference matters: encrypting an attachment so the scanner cannot read it, and
 putting the password in the message beside it, is the oldest working delivery method

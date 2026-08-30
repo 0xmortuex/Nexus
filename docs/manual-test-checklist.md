@@ -302,6 +302,11 @@ as well as a manual step.
       reports it as **password-protected**, not as corrupt, and does not imply it is
       clean.
 - [ ] A `.zip` renamed to `.txt` is still recognised — format comes from the bytes.
+- [ ] Put the dropper `.zip` inside another `.zip`. The findings are still reported,
+      and name the path through both archives.
+- [ ] Mix formats: a `.zip` containing a `.7z` containing the dropper. Still found.
+- [ ] Nest four archives deep. Nexus reports the inner one as **not opened** and says
+      its contents have not been cleared — it must never go quiet instead.
 
 ## 8d. Exclusions, right-click and USB
 

@@ -59,13 +59,59 @@ public sealed class ArchiveStaticEngine : IStaticEngine
 
         using var stream = new MemoryStream(bytes.ToArray(), writable: false);
 
+        // One budget for the whole file, shared by every level of nesting. Created
+        // here so that opening an archive inside this one spends the same allowance
+        // rather than being handed a fresh one.
+        var budget = new ArchiveInspector.ArchiveBudget();
+
+        return Inspect(stream, format, budget);
+    }
+
+    private IReadOnlyList<SecuritySignal> Inspect(
+        Stream stream, ArchiveInspector.ArchiveFormat format, ArchiveInspector.ArchiveBudget budget)
+    {
         // ZIP keeps the framework's own reader. It is the format that arrives most
         // often, the existing path is well covered by tests, and routing it through a
         // third-party parser would gain nothing.
         if (format == ArchiveInspector.ArchiveFormat.Zip)
-            return ArchiveInspector.Inspect(stream, AnalyseEntry);
+        {
+            try
+            {
+                using var archive = new System.IO.Compression.ZipArchive(
+                    stream, System.IO.Compression.ZipArchiveMode.Read, leaveOpen: true);
 
-        return InspectWithSharpCompress(stream, format);
+                return ArchiveInspector.InspectEntries(
+                    archive.Entries.Select(entry => new ArchiveInspector.ArchiveEntryView(
+                        entry.FullName, entry.Length, entry.CompressedLength,
+                        limit => ReadZipEntry(entry, limit))),
+                    (content, name) => AnalyseEntry(content, name, budget),
+                    budget);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or ArgumentException)
+            {
+                return
+                [
+                    new SecuritySignal(SignalSource.StaticRules, SignalWeight.Weak, "archive-corrupt",
+                        "This looks like an archive but could not be opened. That happens with damaged " +
+                        "downloads, and also with archives deliberately malformed to defeat scanners."),
+                ];
+            }
+        }
+
+        return InspectWithSharpCompress(stream, format, budget);
+    }
+
+    private static byte[] ReadZipEntry(System.IO.Compression.ZipArchiveEntry entry, long limit)
+    {
+        try
+        {
+            using var entryStream = entry.Open();
+            return ReadUpTo(entryStream, entry.Length, limit);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return [];
+        }
     }
 
     /// <summary>
@@ -88,11 +134,11 @@ public sealed class ArchiveStaticEngine : IStaticEngine
     /// compromised elevated one.
     /// </summary>
     private IReadOnlyList<SecuritySignal> InspectWithSharpCompress(
-        MemoryStream stream, ArchiveInspector.ArchiveFormat format)
+        Stream stream, ArchiveInspector.ArchiveFormat format, ArchiveInspector.ArchiveBudget budget)
     {
         try
         {
-            return InspectRandomAccess(stream);
+            return InspectRandomAccess(stream, budget);
         }
         catch (CryptographicException)
         {
@@ -106,7 +152,7 @@ public sealed class ArchiveStaticEngine : IStaticEngine
         try
         {
             stream.Position = 0;
-            return InspectStreaming(stream);
+            return InspectStreaming(stream, budget);
         }
         catch (CryptographicException)
         {
@@ -129,7 +175,8 @@ public sealed class ArchiveStaticEngine : IStaticEngine
     }
 
     /// <summary>7z and RAR: the whole entry list is available up front.</summary>
-    private IReadOnlyList<SecuritySignal> InspectRandomAccess(Stream stream)
+    private IReadOnlyList<SecuritySignal> InspectRandomAccess(
+        Stream stream, ArchiveInspector.ArchiveBudget budget)
     {
         using var archive = ArchiveFactory.OpenArchive(stream, new ReaderOptions());
 
@@ -144,7 +191,8 @@ public sealed class ArchiveStaticEngine : IStaticEngine
             entry.CompressedSize,
             limit => ReadEntry(entry, limit)));
 
-        var signals = new List<SecuritySignal>(ArchiveInspector.InspectEntries(entries, AnalyseEntry));
+        var signals = new List<SecuritySignal>(ArchiveInspector.InspectEntries(
+            entries, (content, name) => AnalyseEntry(content, name, budget), budget));
 
         int encrypted = files.Count(entry => entry.IsEncrypted);
         if (encrypted > 0)
@@ -161,15 +209,18 @@ public sealed class ArchiveStaticEngine : IStaticEngine
     /// permits; materialising the sequence first would read every entry against a
     /// stream that has already moved past it.
     /// </summary>
-    private IReadOnlyList<SecuritySignal> InspectStreaming(Stream stream)
+    private IReadOnlyList<SecuritySignal> InspectStreaming(
+        Stream stream, ArchiveInspector.ArchiveBudget budget)
     {
         using var reader = ReaderFactory.OpenReader(stream, new ReaderOptions());
 
         int encrypted = 0;
         int total = 0;
 
-        var signals = new List<SecuritySignal>(
-            ArchiveInspector.InspectEntries(StreamEntries(reader, () => total++, () => encrypted++), AnalyseEntry));
+        var signals = new List<SecuritySignal>(ArchiveInspector.InspectEntries(
+            StreamEntries(reader, () => total++, () => encrypted++),
+            (content, name) => AnalyseEntry(content, name, budget),
+            budget));
 
         if (encrypted > 0)
             signals.Add(EncryptedEntries(encrypted, total));
@@ -282,9 +333,50 @@ public sealed class ArchiveStaticEngine : IStaticEngine
         return buffer;
     }
 
-    private IReadOnlyList<SecuritySignal> AnalyseEntry(byte[] content, string entryName)
+    /// <summary>
+    /// Examine one entry, and open it if it is itself an archive.
+    ///
+    /// Putting the payload inside a second archive is the oldest way past a scanner
+    /// that stops at the container, so reporting "there is an archive in here" and
+    /// giving up was leaving the obvious case unexamined.
+    ///
+    /// The recursion is bounded twice over: by depth, and by a budget shared with
+    /// every outer level. Sharing the budget is what makes this safe \u2014 a fresh
+    /// allowance per level would let ten nested archives multiply the expansion
+    /// ceiling tenfold, turning the zip-bomb defence into a zip-bomb amplifier.
+    /// </summary>
+    private IReadOnlyList<SecuritySignal> AnalyseEntry(
+        byte[] content, string entryName, ArchiveInspector.ArchiveBudget budget)
     {
         var signals = new List<SecuritySignal>();
+
+        var nested = ArchiveInspector.DetectFormat(content);
+        if (nested != ArchiveInspector.ArchiveFormat.None && budget.CanDescend)
+        {
+            budget.Depth++;
+
+            try
+            {
+                using var inner = new MemoryStream(content, writable: false);
+                signals.AddRange(Inspect(inner, nested, budget));
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                signals.Add(new SecuritySignal(
+                    SignalSource.StaticRules, SignalWeight.Weak, "archive-nested-unreadable",
+                    $"An archive inside this one ({entryName}) could not be opened " +
+                    $"({ex.GetType().Name}). Its contents were not examined."));
+            }
+            finally
+            {
+                budget.Depth--;
+            }
+
+            // A nested archive is a container, not a program: the PE and script
+            // engines have nothing to say about its bytes.
+            return signals;
+        }
+
         signals.AddRange(_pe.Analyse(content, entryName));
         signals.AddRange(_scripts.Analyse(content, entryName));
         return signals;

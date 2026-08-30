@@ -30,8 +30,33 @@ public static class ArchiveInspector
     /// <summary>An entry claiming to expand more than this many times is a zip bomb.</summary>
     public const long MaxCompressionRatio = 200;
 
+    /// <summary>How deep to open archives inside archives.</summary>
+    public const int MaxNestingDepth = 2;
+
     /// <summary>Analyses one entry's bytes; the caller supplies the real engines.</summary>
     public delegate IReadOnlyList<SecuritySignal> EntryAnalyser(byte[] content, string entryName);
+
+    /// <summary>
+    /// The limits, carried across every level of nesting.
+    ///
+    /// This is the whole reason nesting is safe to allow. If each archive got a fresh
+    /// budget, an attacker could nest ten archives and multiply the expansion ceiling
+    /// by ten — which turns the zip-bomb defence into a zip-bomb amplifier. One budget
+    /// is created at the top and every level spends from it.
+    /// </summary>
+    public sealed class ArchiveBudget
+    {
+        public int EntriesExamined { get; set; }
+        public long BytesExpanded { get; set; }
+
+        /// <summary>How many archives deep the current entry sits.</summary>
+        public int Depth { get; set; }
+
+        public bool Exhausted =>
+            EntriesExamined >= MaxEntries || BytesExpanded >= MaxTotalUncompressedBytes;
+
+        public bool CanDescend => Depth < MaxNestingDepth && !Exhausted;
+    }
 
     /// <summary>
     /// One entry, as the limit checks need to see it.
@@ -106,12 +131,17 @@ public static class ArchiveInspector
         && bytes[0] == 0x50 && bytes[1] == 0x4B
         && (bytes[2] == 0x03 || bytes[2] == 0x05 || bytes[2] == 0x07);
 
-    public static IReadOnlyList<SecuritySignal> Inspect(Stream archiveStream, EntryAnalyser analyseEntry)
+    public static IReadOnlyList<SecuritySignal> Inspect(Stream archiveStream, EntryAnalyser analyseEntry) =>
+        Inspect(archiveStream, analyseEntry, new ArchiveBudget());
+
+    /// <summary>The same, spending from a budget shared with any outer archive.</summary>
+    public static IReadOnlyList<SecuritySignal> Inspect(
+        Stream archiveStream, EntryAnalyser analyseEntry, ArchiveBudget budget)
     {
         try
         {
             using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read, leaveOpen: true);
-            return InspectEntries(archive, analyseEntry);
+            return InspectEntries(archive, analyseEntry, budget);
         }
         catch (Exception ex) when (ex is InvalidDataException or ArgumentException)
         {
@@ -124,28 +154,36 @@ public static class ArchiveInspector
         }
     }
 
-    private static IReadOnlyList<SecuritySignal> InspectEntries(ZipArchive archive, EntryAnalyser analyseEntry) =>
+    private static IReadOnlyList<SecuritySignal> InspectEntries(
+        ZipArchive archive, EntryAnalyser analyseEntry, ArchiveBudget budget) =>
         InspectEntries(
             archive.Entries.Select(e => new ArchiveEntryView(
                 e.FullName, e.Length, e.CompressedLength, limit => ReadEntry(e, limit))),
-            analyseEntry);
+            analyseEntry,
+            budget);
 
     /// <summary>
     /// Apply every limit and rule to a sequence of entries, whatever produced them.
     /// This is the single place the archive rules live.
     /// </summary>
     public static IReadOnlyList<SecuritySignal> InspectEntries(
-        IEnumerable<ArchiveEntryView> entries, EntryAnalyser analyseEntry)
+        IEnumerable<ArchiveEntryView> entries, EntryAnalyser analyseEntry) =>
+        InspectEntries(entries, analyseEntry, new ArchiveBudget());
+
+    /// <summary>
+    /// The same, spending from a caller-supplied budget so that an archive opened
+    /// inside another archive shares the outer one's limits.
+    /// </summary>
+    public static IReadOnlyList<SecuritySignal> InspectEntries(
+        IEnumerable<ArchiveEntryView> entries, EntryAnalyser analyseEntry, ArchiveBudget budget)
     {
         var signals = new List<SecuritySignal>();
-        long totalRead = 0;
-        int examined = 0;
         var executableNames = new List<string>();
         bool truncated = false;
 
         foreach (var entry in entries)
         {
-            if (examined >= MaxEntries || totalRead >= MaxTotalUncompressedBytes)
+            if (budget.Exhausted)
             {
                 truncated = true;
                 break;
@@ -173,12 +211,15 @@ public static class ArchiveInspector
                 continue;
             }
 
-            if (IsNestedArchive(entry.Name))
+            if (IsNestedArchive(entry.Name) && !budget.CanDescend)
             {
                 signals.Add(new SecuritySignal(
-                    SignalSource.StaticRules, SignalWeight.Weak, "archive-nested",
-                    $"This archive contains another archive ({entry.Name}). Nexus does not open " +
-                    "archives inside archives, so its contents were not examined."));
+                    SignalSource.StaticRules, SignalWeight.Weak, "archive-nested-unopened",
+                    $"This archive contains another archive ({entry.Name}) that Nexus did not open, " +
+                    (budget.Depth >= MaxNestingDepth
+                        ? $"because it is more than {MaxNestingDepth} archives deep. "
+                        : "because the limits for this file were already reached. ") +
+                    "Its contents have not been cleared — they have not been looked at."));
                 continue;
             }
 
@@ -186,8 +227,8 @@ public static class ArchiveInspector
             if (content.Length == 0)
                 continue;
 
-            totalRead += content.Length;
-            examined++;
+            budget.BytesExpanded += content.Length;
+            budget.EntriesExamined++;
 
             if (IsExecutableName(entry.Name))
                 executableNames.Add(entry.Name);
@@ -224,7 +265,12 @@ public static class ArchiveInspector
     private static SecuritySignal Requalify(SecuritySignal signal, string entryName) =>
         signal with
         {
-            Code = "archive-" + signal.Code,
+            // Prefixed once, however deep the nesting goes. An archive inside an
+            // archive would otherwise produce "archive-archive-script-download-and-run",
+            // and codes are what suppression and tests match on.
+            Code = signal.Code.StartsWith("archive-", StringComparison.Ordinal)
+                ? signal.Code
+                : "archive-" + signal.Code,
             Explanation = $"Inside the archive, {entryName}: " +
                           char.ToLowerInvariant(signal.Explanation[0]) + signal.Explanation[1..],
         };
