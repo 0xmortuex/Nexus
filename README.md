@@ -99,6 +99,52 @@ by the automated tests versus what needs a live Windows machine.
 - Tweaks refuse to apply if their registry backup fails.
 - Debloat disables — it never deletes services or tasks.
 
+## What this costs
+
+Nothing, and nothing it depends on costs anything either.
+
+| | |
+|---|---|
+| Nexus | MIT, this repository |
+| .NET 8 SDK | free |
+| YARA-X *(optional)* | BSD-3, free download from VirusTotal |
+| YARA rule sets *(optional)* | free; several are MIT — see NOTICE.md |
+| MalwareBazaar hash list *(optional)* | CC0, free, no account |
+| Known-good baseline | generated on your own machine |
+| CI | GitHub Actions, free for public repositories |
+
+There is exactly one thing money would buy, and it is worth being straight about
+rather than leaving it as an implied upgrade path.
+
+### The SmartScreen warning
+
+Nexus is not code-signed, so the first time anyone runs it Windows says *"Windows
+protected your PC"* and they have to click **More info → Run anyway**. A code-signing
+certificate is the only thing that removes that, it costs a few hundred pounds a
+year, and there is no free equivalent — SmartScreen reputation is tied to a
+certificate, so an unsigned build never accrues any no matter how many people
+download it.
+
+What is free is letting people verify the file instead of trusting the warning:
+releases are built by a public GitHub Actions workflow from a tagged commit and ship
+a `SHA256SUMS.txt`, so anyone can confirm the binary matches what the workflow built
+from source they can read.
+
+That is a weaker guarantee than a signature and it is stated as one. It does not
+affect anything Nexus actually does.
+
+### What staying free rules out
+
+Only things that were already out of reach and are documented as such in
+`docs/parity-matrix.md`: an AMSI provider for in-memory script inspection (scripts
+*on disk* are already covered), a kernel driver for real-time blocking, and
+registering as the system antivirus. The last two need Microsoft Virus Initiative
+membership, which needs a company and independent lab certification — those were
+never a question of money.
+
+None of it changes the design. Sentinel reports rather than blocks by choice, and
+every capability that choice gives up is one that needed a signed driver anyway.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

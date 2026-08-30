@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish a release
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Publish
+        run: dotnet publish src/Nexus.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+
+      # Checksums are the free substitute for a code-signing certificate. They do not
+      # stop SmartScreen — nothing free does — but they let anyone confirm the file
+      # they downloaded is the file this workflow built, and the workflow is public.
+      # That is a weaker guarantee than a signature, honestly stated, rather than no
+      # guarantee at all.
+      - name: Package with checksums
+        shell: pwsh
+        run: |
+          $pub = "src/Nexus.App/bin/Release/net8.0-windows/win-x64/publish"
+          $stage = New-Item -ItemType Directory -Force -Path "release"
+
+          # Ship the program and its data; leave the debug symbols behind.
+          Copy-Item "$pub/Nexus.exe"          "$stage/"
+          Copy-Item "$pub/Nexus.Scanner.exe"  "$stage/"
+          Copy-Item "$pub/assets"             "$stage/" -Recurse
+
+          Get-ChildItem $stage -Recurse -File |
+            ForEach-Object {
+              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+              "$hash  $($_.FullName.Replace((Resolve-Path $stage).Path + '\', ''))"
+            } | Set-Content "$stage/SHA256SUMS.txt"
+
+          Get-Content "$stage/SHA256SUMS.txt"
+
+          Compress-Archive -Path "$stage/*" -DestinationPath "nexus-win-x64.zip"
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            nexus-win-x64.zip
+          body: |
+            Windows 10/11 x64. Requires administrator (the manifest enforces it).
+
+            **Windows will warn you when you first run this.** Nexus is not code-signed
+            — a certificate that stops that warning costs several hundred pounds a
+            year, and this is a free project. You will see "Windows protected your PC";
+            choose **More info → Run anyway**.
+
+            You do not have to take that on faith. `SHA256SUMS.txt` in the archive
+            lists the hash of every file, these binaries were built by a public GitHub
+            Actions workflow from the tagged commit, and the whole source is here. Check
+            the hash before you run it:
+
+            ```powershell
+            Get-FileHash .\Nexus.exe -Algorithm SHA256
+            ```
+
+            Optional extras, both free and neither bundled — see `docs/sentinel.md`:
+            YARA-X for rule matching, and a MalwareBazaar hash list for known-bad
+            reputation. Nexus works without either.

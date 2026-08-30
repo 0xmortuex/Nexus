@@ -13,7 +13,9 @@ items marked **[hybrid]** need a P/E-core CPU (Intel 12th gen+), items marked
 - [ ] Denying elevation → app does not start. Accepting → main window opens, dark theme.
 - [ ] Launching a second instance shows "already running" and exits.
 - [ ] `%APPDATA%\Nexus\` is created with settings.json + logs\activity-*.log.
-- [ ] SmartScreen note: unsigned exe → "More info → Run anyway" is expected; document for users.
+- [ ] SmartScreen: unsigned exe → "Windows protected your PC" → More info → Run
+      anyway. Expected and unavoidable without a paid certificate; the README says
+      so plainly and releases ship SHA256SUMS.txt so users can verify instead.
 
 ## 1. Core engine / rules
 - [ ] Dashboard shows CPU %, RAM, per-core bars matching Task Manager (±2 %).
