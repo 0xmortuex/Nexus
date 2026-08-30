@@ -230,6 +230,91 @@ logic; everything below is the part that talks to the OS.
 - [ ] Leave the app idle overnight with monitoring on → no unbounded growth in the
       behaviour engine's process map (capped at 4096).
 
+## 8b. Scan modes and the things that produce false positives
+
+The point of this section is the *absence* of findings. Every check here was a real
+false positive on a real machine at some point, and each one is now a regression test
+as well as a manual step.
+
+- [ ] **Scan folder** on a web project containing `node_modules` and a `.next` build:
+      finishes with **zero** findings. Minified bundles, `typescript.js` and `core-js`
+      polyfills must not be flagged. (This once produced 1,988 findings.)
+- [ ] **Scan folder** on `C:\Windows\System32`: zero findings, and opening any result
+      detail shows Windows files as **signed by Microsoft**, not "no digital
+      signature". Catalog-signed files are the whole point of this check.
+- [ ] **Scan folder** on Nexus's own build output: zero findings. A .NET assembly with
+      embedded resources must not read as "packed".
+- [ ] **Check running programs**: completes, reports how many distinct programs it
+      looked at, and flags nothing on a clean machine. Processes it cannot open are
+      skipped silently — the Log must NOT fill with warnings about system processes.
+- [ ] **Full scan**: starts, the status line names the folder it is currently reading
+      and updates as it moves. Stop works. The run appears in the scan history marked
+      as stopped early.
+- [ ] Plant a test script containing `IEX (New-Object Net.WebClient).DownloadString(...)`
+      plus a Run-key write. Scanning it reports **LikelyMalicious**, and nothing about
+      the file is changed. This is the control: if the checks above pass but this one
+      does not, the tool has been quieted into uselessness.
+
+## 8c. Archives
+
+- [ ] Put the test script from above inside `.zip`, `.7z`, `.tar.gz` and `.tar.bz2`
+      (7-Zip and `tar` both do this). Each one reports the same findings, named for the
+      entry they came from.
+- [ ] Create a password-protected `.7z` with encrypted headers (`-mhe=on`). Nexus
+      reports it as **password-protected**, not as corrupt, and does not imply it is
+      clean.
+- [ ] A `.zip` renamed to `.txt` is still recognised — format comes from the bytes.
+
+## 8d. Exclusions, right-click and USB
+
+- [ ] Security → "Files Nexus skips" → Browse → pick a folder → "Skip this". It
+      appears in the list. Rescanning that folder reports files as **skipped**, never
+      as clean.
+- [ ] Exclude a whole drive (e.g. `C:\`). It is accepted — Nexus does not argue — but
+      an amber warning appears on that row saying scanning is effectively off.
+- [ ] "Scan it again" removes the exclusion.
+- [ ] Settings → tick "Add Scan with Nexus to the right-click menu". Right-click any
+      file in Explorer → "Scan with Nexus" → the existing Nexus window comes forward,
+      switches to Security, and reports on that file — **without** a second instance
+      starting and without an "already running" dialog.
+- [ ] Right-click a folder and a drive: both offer the entry.
+- [ ] Untick the setting → the entry disappears from all three menus. Check
+      `HKCU\Software\Classes\*\shell` no longer contains `Nexus.ScanWithNexus`.
+- [ ] Tools → Restore Defaults also removes the entry.
+- [ ] Plug in a USB stick with protection on: the Log records that it was looked at,
+      and the drive stays fully usable throughout. Unplug and replug → scanned again.
+- [ ] A stick already plugged in when Nexus starts is NOT rescanned on every launch.
+
+## 8e. Settings, posture and extensions
+
+- [ ] "Check Windows security settings": reports firewall, UAC, SmartScreen, Secure
+      Boot, encryption and update age. On a normally configured machine it finds
+      nothing. Turn the Windows firewall off for the public profile → it is reported
+      as Moderate, and the wording describes *configuration*, not infection.
+- [ ] Anything Nexus cannot read must be silently absent, never reported as "off".
+- [ ] "Check browser extensions": lists extensions from every Chromium browser
+      installed, each with real names (never a 32-character id) and plain-language
+      capabilities. Ordinary store extensions raise no alert even when they can read
+      every site.
+- [ ] "Check network settings": hosts file, proxy and DNS. A DNS server Nexus itself
+      set from the Tools tab is not reported as a hijack.
+
+## 8f. Scan history
+
+- [ ] Every scan above appears in the history with its type, file count and duration.
+- [ ] A scan you stopped is recorded as stopped early, not as completed.
+- [ ] "Save report…" writes a readable text file listing every run and stating that
+      nothing was changed.
+- [ ] "Clear history" empties it, and it stays empty after a restart.
+
+## 8g. Scheduled full scan
+
+- [ ] Settings → "Run a full scan every week when the machine is idle" is **off** by
+      default.
+- [ ] Switch it on and restart. The Log states the interval and the idle requirement.
+- [ ] It does not start while you are using the machine, and does not start while a
+      game is running.
+
 ## 9. Measurement and phase-2 detection
 
 ### Latency measurement

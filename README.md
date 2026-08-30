@@ -39,18 +39,33 @@ it instead of deciding for you.
   difference" — which, for most tweaks, is the truth. Plus throttle detection that
   separates a ceiling your power plan is enforcing (fixable) from one the firmware
   is enforcing because of heat or power delivery (not fixable, and it says so).
-- **Sentinel — security that reports, never decides** — on-demand file scanning,
-  a startup/persistence audit (Run keys, tasks, services, IFEO, WMI subscriptions,
-  Winlogon, AppInit_DLLs), Authenticode verification, PE structure heuristics,
-  byte-pattern signatures, local hash reputation, and live behaviour monitoring
-  (masquerading system binaries, living-off-the-land command lines, documents
-  spawning shells), ransomware canaries with mass-change detection, script
-  obfuscation analysis, ZIP inspection, per-process network connections, and
-  Microsoft Defender health including exclusion auditing. New downloads are checked
-  as they land, and the folders where files actually arrive are re-checked on a
-  schedule that never runs while a game is active. Optional YARA-X support activates
-  when you supply the library and rules. Every finding shows its reasons and a score
-  out of 100.
+- **Sentinel — security that reports, never decides** — scanning on demand, by
+  folder, by right-click, across every fixed drive, over the programs running right
+  now, and over a USB stick the moment it is plugged in. Behind it: Authenticode
+  verification including catalog-signed Windows files, PE structure heuristics,
+  byte-pattern signatures, local hash reputation, script obfuscation analysis, and
+  archive inspection covering ZIP, 7z, RAR, tar, gzip, bzip2 and xz — with
+  password-protected archives reported as unread rather than as clean.
+
+  Alongside the file scanning: live behaviour monitoring (masquerading system
+  binaries, living-off-the-land command lines, documents spawning shells), a
+  startup/persistence audit (Run keys, tasks, services, IFEO, WMI subscriptions,
+  Winlogon, AppInit_DLLs), ransomware canaries with mass-change detection,
+  per-process network connections, a hosts/proxy/DNS hijack check, a Windows
+  security posture check (firewall, UAC, SmartScreen, Secure Boot, encryption,
+  update age), a browser extension inventory that explains in plain words what each
+  one can do, and Microsoft Defender health including exclusion auditing.
+
+  New downloads are checked as they land; the folders where files actually arrive
+  are re-checked every few hours; and a weekly full scan can be switched on that
+  waits for the machine to be genuinely idle and yields the moment you touch it.
+  Every scan is recorded and the history exports as plain text. Optional YARA-X
+  support activates when you supply the library and rules.
+
+  Every finding shows its reasons and a score out of 100, and the scoring is
+  calibrated against real machines rather than against theory — a scan of a
+  developer's web project, of `System32`, and of Nexus's own build output each
+  produce **no** findings, while a planted PowerShell dropper still scores 63/100.
   Nothing is ever blocked, moved or deleted without a click on that exact file.
   See `docs/sentinel.md`.
 - **UI** — dark WPF app with Dashboard, Processes, Game Mode, Tweaks, Security,
