@@ -15,6 +15,10 @@ public partial class MainWindow : Window
     /// <summary>Set false only when the user chooses Exit from the tray.</summary>
     public bool MinimizeToTrayOnClose { get; set; } = true;
 
+    /// <summary>Bring the Security tab forward — used when a right-click scan
+    /// arrives, so the answer appears where the user is looking.</summary>
+    public void ShowSecurityTab() => Tabs.SelectedItem = SecurityTab;
+
     public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();

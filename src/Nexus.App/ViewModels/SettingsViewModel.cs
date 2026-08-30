@@ -8,14 +8,46 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly SettingsService _settings;
     private readonly AutostartService _autostart;
     private readonly KeepAwakeService _keepAwake;
+    private readonly Services.Security.ShellIntegrationService _shellMenu;
 
-    public SettingsViewModel(SettingsService settings, AutostartService autostart, KeepAwakeService keepAwake)
+    public SettingsViewModel(
+        SettingsService settings,
+        AutostartService autostart,
+        KeepAwakeService keepAwake,
+        Services.Security.ShellIntegrationService shellMenu)
     {
         _settings = settings;
         _autostart = autostart;
         _keepAwake = keepAwake;
+        _shellMenu = shellMenu;
         _startWithWindows = autostart.IsEnabled();
         keepAwake.EnabledChanged += _ => OnPropertyChanged(nameof(KeepAwake));
+    }
+
+    private string _shellMenuStatus = "";
+
+    /// <summary>What the last register/unregister actually did. Shown because a
+    /// registry change the user cannot see the result of is a change they have to
+    /// take on faith.</summary>
+    public string ShellMenuStatus
+    {
+        get => _shellMenuStatus;
+        private set => Set(ref _shellMenuStatus, value);
+    }
+
+    /// <summary>
+    /// "Scan with Nexus" in the right-click menu. Written under the current user
+    /// only, so it needs no administrator rights and cannot affect anyone else who
+    /// uses this machine.
+    /// </summary>
+    public bool ShellMenuEnabled
+    {
+        get => _shellMenu.IsRegistered;
+        set
+        {
+            ShellMenuStatus = value ? _shellMenu.Register() : _shellMenu.Unregister();
+            OnPropertyChanged();
+        }
     }
 
     // ---- Security ----

@@ -395,6 +395,66 @@ public sealed class SecurityViewModel : ViewModelBase
 
     private static string Clock(TimeSpan elapsed) => elapsed.ToString(@"hh\:mm\:ss");
 
+    /// <summary>
+    /// Scan whatever the user right-clicked, whether that is one file or a folder.
+    ///
+    /// A single file is reported even when it comes back clean. Everywhere else
+    /// Nexus stays quiet about uninteresting results, but this scan was explicitly
+    /// asked for, and silence in answer to a direct question reads as a failure.
+    /// </summary>
+    public async Task ScanPathAsync(string path)
+    {
+        if (IsScanning)
+        {
+            Status = "A scan is already running. Stop it first, or wait for it to finish.";
+            return;
+        }
+
+        if (Directory.Exists(path))
+        {
+            await ScanFolderAsync(path).ConfigureAwait(false);
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            Status = $"{path} is not there any more.";
+            return;
+        }
+
+        IsScanning = true;
+        _scanCancellation = new CancellationTokenSource();
+
+        try
+        {
+            Status = $"Looking at {Path.GetFileName(path)}…";
+
+            var verdict = await _sentinel.ScanFileAsync(path, _scanCancellation.Token)
+                .ConfigureAwait(false);
+
+            Status = verdict.WarrantsAlert
+                ? $"{Path.GetFileName(path)}: {verdict.Level} at {verdict.Score}/100. The reasons are " +
+                  "in the findings list below. Nothing was changed."
+                : $"{Path.GetFileName(path)}: nothing worth flagging ({verdict.Score}/100). " +
+                  "Nothing was changed.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Stopped. Nothing was changed.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"Could not read {Path.GetFileName(path)}: {ex.Message}";
+        }
+        finally
+        {
+            IsScanning = false;
+            _scanCancellation?.Dispose();
+            _scanCancellation = null;
+            RefreshFindings();
+        }
+    }
+
     /// <summary>The last two path segments — enough to show progress without
     /// spilling a 200-character path across the window.</summary>
     private static string ShortFolder(string? path)

@@ -30,6 +30,7 @@ public sealed class SentinelResetService
     private readonly VerdictCache _cache;
     private readonly BaselineStore _baselines;
     private readonly RansomwareGuardService _ransomware;
+    private readonly ShellIntegrationService _shellMenu;
     private readonly NexusPaths _paths;
     private readonly ActivityLog _log;
 
@@ -40,6 +41,7 @@ public sealed class SentinelResetService
         VerdictCache cache,
         BaselineStore baselines,
         RansomwareGuardService ransomware,
+        ShellIntegrationService shellMenu,
         NexusPaths paths,
         ActivityLog log)
     {
@@ -49,6 +51,7 @@ public sealed class SentinelResetService
         _cache = cache;
         _baselines = baselines;
         _ransomware = ransomware;
+        _shellMenu = shellMenu;
         _paths = paths;
         _log = log;
     }
@@ -57,6 +60,18 @@ public sealed class SentinelResetService
     public IReadOnlyList<string> ResetEverything()
     {
         var failures = new List<string>();
+
+        // The right-click entry is a registry key Nexus put in someone's profile.
+        // "Restore defaults" that leaves it behind is not a restore.
+        try
+        {
+            if (_shellMenu.IsRegistered)
+                _shellMenu.Unregister();
+        }
+        catch (Exception ex)
+        {
+            failures.Add($"Right-click menu entry: {ex.Message}");
+        }
 
         // 1. Files first. Everything else is bookkeeping and can be recreated; a
         //    quarantined file cannot.

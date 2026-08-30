@@ -33,19 +33,74 @@ public partial class App : System.Windows.Application
     private bool _startupCompleted;
 
     private Mutex? _singleInstanceMutex;
+    private ScanRequestChannel? _scanRequests;
     private ActivityLog? _log;
     private MainWindow? _window;
     private TrayIconService? _tray;
     private Action? _showWizard;
     private readonly List<IDisposable> _disposables = [];
 
+    /// <summary>
+    /// Pull the path out of <c>--scan "C:\some\file"</c>.
+    ///
+    /// Returns null when the switch is absent or names something that no longer
+    /// exists, so a stale shortcut cannot make Nexus report on nothing.
+    /// </summary>
+    private static string? ReadScanArgument(string[] args)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (!string.Equals(args[i], "--scan", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var path = args[i + 1];
+            if (System.IO.File.Exists(path) || System.IO.Directory.Exists(path))
+                return path;
+
+            return null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Act on a right-click scan: show the window, switch to Security, and scan.
+    ///
+    /// Bringing the window up is the point. A scan the user asked for that reports
+    /// into a tray icon they cannot see has not answered their question.
+    /// </summary>
+    private void HandleScanRequest(ViewModels.MainViewModel mainViewModel, string path)
+    {
+        if (_window is null || path.Length == 0)
+            return;
+
+        _window.Show();
+        _window.WindowState = WindowState.Normal;
+        _window.Activate();
+
+        _window.ShowSecurityTab();
+        _ = mainViewModel.Security.ScanPathAsync(path);
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
+        string? scanRequest = ReadScanArgument(e.Args);
+
         _singleInstanceMutex = new Mutex(true, @"Global\NexusOptimizerSingleInstance", out bool isNew);
         if (!isNew)
         {
+            // A right-click "Scan with Nexus" while Nexus is already running. Hand the
+            // path to the instance that has the window and exit quietly — telling the
+            // user their own program is already running, when they just asked it to do
+            // something, is not an answer.
+            if (scanRequest is not null && ScanRequestChannel.TrySend(scanRequest, TimeSpan.FromSeconds(3)))
+            {
+                Shutdown();
+                return;
+            }
+
             MessageBox.Show("Nexus is already running (check the tray).", "Nexus",
                 MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
@@ -143,6 +198,7 @@ public partial class App : System.Windows.Application
             System.IO.Path.GetFileName(Environment.ProcessPath) ?? "Nexus.exe");
         var behaviourWatcher = new ProcessDetailWatcher(log, behaviorEngine);
         var trustStore = new TrustStore(paths);
+        var shellMenu = new ShellIntegrationService(log, Environment.ProcessPath ?? "");
         var quarantineJournal = new QuarantineJournal(paths);
         var quarantine = new QuarantineService(quarantineJournal, paths, log);
         var verdictCache = new VerdictCache(paths, SentinelRulesVersion);
@@ -173,7 +229,7 @@ public partial class App : System.Windows.Application
 
         var sentinelReset = new SentinelResetService(
             quarantine, quarantineJournal, trustStore, verdictCache, baselines, ransomwareGuard,
-            paths, log);
+            shellMenu, paths, log);
         var restoreDefaults = new RestoreDefaultsService(
             tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns,
             sentinelReset, log);
@@ -218,7 +274,7 @@ public partial class App : System.Windows.Application
                 baselineBuilder, hashFeeds),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic, benchmark, baselines),
             Log = new LogViewModel(log),
-            Settings = new SettingsViewModel(settings, autostart, keepAwake),
+            Settings = new SettingsViewModel(settings, autostart, keepAwake, shellMenu),
             RestoreDefaultsCommand = new RelayCommand(() =>
             {
                 if (MessageBox.Show(
@@ -265,7 +321,19 @@ public partial class App : System.Windows.Application
             Shutdown();
         };
 
+        // Right-click scan requests from later launches. Started before the window is
+        // shown so a request that arrives during startup is not dropped.
+        _scanRequests = new ScanRequestChannel(log, path =>
+            Dispatcher.Invoke(() => HandleScanRequest(mainViewModel, path)));
+        _scanRequests.Start();
+
         _window.Show();
+
+        // A path passed on this launch's own command line, once the UI exists to show
+        // the result in.
+        if (scanRequest is not null)
+            Dispatcher.BeginInvoke(() => HandleScanRequest(mainViewModel, scanRequest));
+
         _startupCompleted = true;
         log.Info("App", "Nexus ready. Closing the window minimizes to the tray.");
 
@@ -289,6 +357,7 @@ public partial class App : System.Windows.Application
                 _log?.Error("App", $"Cleanup error: {ex.Message}");
             }
         }
+        _scanRequests?.Dispose();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }

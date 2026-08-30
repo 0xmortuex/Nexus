@@ -530,7 +530,7 @@
         </TabItem>
 
         <!-- ================= Security (Sentinel) ================= -->
-        <TabItem Header="Security">
+        <TabItem Header="Security" x:Name="SecurityTab">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="10" DataContext="{Binding Security}" MaxWidth="980" HorizontalAlignment="Left">
 
@@ -986,6 +986,13 @@
                                       IsChecked="{Binding ScanDownloads}"/>
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
                                        Text="Scans programs and archives that appear in your Downloads folder, and only says something if there is something to say."/>
+
+                            <CheckBox Content="Add &quot;Scan with Nexus&quot; to the right-click menu"
+                                      IsChecked="{Binding ShellMenuEnabled}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,2"
+                                       Text="Lets you right-click any file, folder or drive and check it. Written for your account only, so it needs no administrator rights, and unticking this removes it completely."/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,0,0,8"
+                                       Text="{Binding ShellMenuStatus}"/>
 
                             <CheckBox Content="Look at USB drives when they are plugged in"
                                       IsChecked="{Binding ScanRemovableDrives}"/>
