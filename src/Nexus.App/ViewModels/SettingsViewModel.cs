@@ -42,6 +42,12 @@ public sealed class SettingsViewModel : ViewModelBase
         set { _settings.Update(s => s with { Security = s.Security with { ScanDownloads = value } }); OnPropertyChanged(); }
     }
 
+    public bool ScanRemovableDrives
+    {
+        get => _settings.Current.Security.ScanRemovableDrives;
+        set { _settings.Update(s => s with { Security = s.Security with { ScanRemovableDrives = value } }); OnPropertyChanged(); }
+    }
+
     public bool CheckDefenderHealth
     {
         get => _settings.Current.Security.CheckDefenderHealth;

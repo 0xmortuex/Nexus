@@ -88,6 +88,10 @@ public sealed record SecurityOptions
     /// while a game is active.</summary>
     public bool ScheduledQuickScan { get; set; } = true;
 
+    /// <summary>Look at a USB drive when it is plugged in. Read-only, like every
+    /// other scan here: the drive stays fully usable while it runs.</summary>
+    public bool ScanRemovableDrives { get; set; } = true;
+
     /// <summary>
     /// Files, folders and file types the user has asked Nexus to skip.
     ///

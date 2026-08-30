@@ -676,7 +676,11 @@
                                         Command="{Binding ScanFolderCommand}"
                                         CommandParameter="{Binding Text, ElementName=ScanFolderBox}"/>
                                 <Button Content="Quick check" Margin="0,0,8,0"
+                                        ToolTip="Downloads, temp and startup folders — the places things arrive."
                                         Command="{Binding QuickScanCommand}"/>
+                                <Button Content="Full scan" Margin="0,0,8,0"
+                                        ToolTip="Every fixed drive. Takes a long time; you can keep working and stop it whenever you like."
+                                        Command="{Binding FullScanCommand}"/>
                                 <Button Content="Check startup items" Margin="0,0,8,0"
                                         Command="{Binding AuditStartupCommand}"/>
                                 <Button Content="Check connections" Margin="0,0,8,0"
@@ -982,6 +986,11 @@
                                       IsChecked="{Binding ScanDownloads}"/>
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
                                        Text="Scans programs and archives that appear in your Downloads folder, and only says something if there is something to say."/>
+
+                            <CheckBox Content="Look at USB drives when they are plugged in"
+                                      IsChecked="{Binding ScanRemovableDrives}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
+                                       Text="Reads what is on a drive when it appears. The drive stays fully usable while this runs, and nothing on it is opened, moved or changed. Stops after 20,000 files and tells you if it did."/>
 
                             <CheckBox Content="Re-check download and startup folders every few hours"
                                       IsChecked="{Binding ScheduledQuickScan}"/>

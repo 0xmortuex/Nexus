@@ -126,6 +126,7 @@ public sealed class SecurityViewModel : ViewModelBase
         RemoveExclusionCommand = new RelayCommand(p => RemoveExclusion(p as ExclusionRow));
         BrowseExclusionCommand = new RelayCommand(BrowseForExclusion);
         AuditSystemSettingsCommand = new RelayCommand(AuditSystemSettings);
+        FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
 
         RefreshDefenderStatus();
 
@@ -177,6 +178,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand RemoveExclusionCommand { get; }
     public RelayCommand BrowseExclusionCommand { get; }
     public RelayCommand AuditSystemSettingsCommand { get; }
+    public RelayCommand FullScanCommand { get; }
 
     // ---- The big switch ----
     //
@@ -332,6 +334,80 @@ public sealed class SecurityViewModel : ViewModelBase
             foreach (var component in _sentinel.ProtectionStatus())
                 Protection.Add(component);
         });
+    }
+
+    /// <summary>
+    /// Scan every fixed drive.
+    ///
+    /// This takes a long time — tens of minutes on a large disk — so the progress
+    /// line names the file being read rather than only counting. A progress display
+    /// that sits on "scanning…" for half an hour is indistinguishable from one that
+    /// has hung, and the user's only recourse is to kill the program.
+    /// </summary>
+    private async Task FullScanAsync()
+    {
+        IsScanning = true;
+        _scanCancellation = new CancellationTokenSource();
+
+        var started = DateTimeOffset.Now;
+        int scanned = 0;
+        int notable = 0;
+
+        try
+        {
+            var drives = string.Join(", ", SentinelService.FixedDriveRoots());
+            Status = $"Full scan of {drives} — this takes a while. You can keep using the machine, " +
+                     "and you can stop it at any time.";
+
+            await foreach (var verdict in _sentinel.ScanEverythingAsync(_scanCancellation.Token))
+            {
+                scanned++;
+                if (verdict.WarrantsAlert)
+                    notable++;
+
+                if (scanned % 50 == 0)
+                {
+                    var elapsed = Clock(DateTimeOffset.Now - started);
+                    Status = $"Full scan: {scanned:N0} files, {notable} worth a look, " +
+                             $"{elapsed} elapsed. Currently in " +
+                             $"{ShortFolder(verdict.Target.Path)}.";
+                }
+            }
+
+            var total = Clock(DateTimeOffset.Now - started);
+            Status = notable == 0
+                ? $"Full scan finished: {scanned:N0} files in {total}. Nothing worth flagging."
+                : $"Full scan finished: {scanned:N0} files in {total}, {notable} worth a look. " +
+                  "Nothing was changed — read the reasons and decide for yourself.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = $"Full scan stopped after {scanned:N0} files. Nothing was changed.";
+        }
+        finally
+        {
+            IsScanning = false;
+            _scanCancellation?.Dispose();
+            _scanCancellation = null;
+            RefreshFindings();
+        }
+    }
+
+    private static string Clock(TimeSpan elapsed) => elapsed.ToString(@"hh\:mm\:ss");
+
+    /// <summary>The last two path segments — enough to show progress without
+    /// spilling a 200-character path across the window.</summary>
+    private static string ShortFolder(string? path)
+    {
+        if (path is not { Length: > 0 })
+            return "…";
+
+        var folder = Path.GetDirectoryName(path);
+        if (folder is not { Length: > 0 })
+            return path;
+
+        var parts = folder.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length <= 2 ? folder : string.Join(Path.DirectorySeparatorChar, parts[^2..]);
     }
 
     // ---- Exclusions ----

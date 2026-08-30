@@ -52,6 +52,7 @@ public sealed class SentinelService : IDisposable
     private readonly KnownGoodBaselineService _baseline;
     private readonly HashFeedImportService _feeds;
     private readonly DownloadWatcherService _downloads;
+    private readonly RemovableDriveWatcherService _removableDrives;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
     public const int MaxAlerts = 500;
@@ -102,6 +103,7 @@ public sealed class SentinelService : IDisposable
         _baseline = baseline;
         _feeds = feeds;
         _downloads = new DownloadWatcherService(log, ScanDownloadAsync, isGameModeActive);
+        _removableDrives = new RemovableDriveWatcherService(log, ScanDriveAsync);
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -150,6 +152,7 @@ public sealed class SentinelService : IDisposable
         TryStart("stopping behaviour monitoring", _behaviour.Stop);
         TryStart("stopping the ransomware watch", _ransomware.Stop);
         TryStart("stopping download checks", _downloads.Stop);
+        TryStart("stopping USB drive checks", _removableDrives.Stop);
 
         IsProtectionOn = false;
         _log.Warn("Sentinel",
@@ -188,6 +191,9 @@ public sealed class SentinelService : IDisposable
 
         if (options.ScanDownloads)
             TryStart("download checks", _downloads.Start);
+
+        if (options.ScanRemovableDrives)
+            TryStart("USB drive checks", _removableDrives.Start);
 
         if (options.CheckDefenderHealth)
             TryStart("the Defender health check", ReportDefenderHealth);
@@ -405,6 +411,92 @@ public sealed class SentinelService : IDisposable
     }
 
     /// <summary>
+    /// Scan every fixed drive on the machine.
+    ///
+    /// This is the "full scan" every antivirus has, and it is the same walk as
+    /// <see cref="ScanFolderAsync"/> repeated per drive — the filtering that keeps a
+    /// folder scan sane (noise directories, uninteresting file types, the user's
+    /// exclusions) is exactly what keeps a full scan finishing this side of an hour.
+    ///
+    /// Removable and network drives are left out on purpose. A network share can be
+    /// enormous and belongs to someone else, and a full scan that silently pulls a
+    /// terabyte across a VPN is not a feature. USB drives are handled separately,
+    /// when they are plugged in, which is when it is actually useful.
+    /// </summary>
+    public async IAsyncEnumerable<Verdict> ScanEverythingAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var root in FixedDriveRoots())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            _log.Info("Sentinel", $"Full scan: starting on {root}.");
+
+            await foreach (var verdict in ScanFolderAsync(root, recursive: true, cancellationToken)
+                               .ConfigureAwait(false))
+            {
+                yield return verdict;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Scan one drive, stopping after <paramref name="maxFiles"/>.
+    ///
+    /// The cap exists because this runs unattended when a drive is plugged in, and
+    /// an unbounded scan the user never asked for is exactly the behaviour that gets
+    /// security software uninstalled. Hitting the cap is reported, not hidden.
+    /// </summary>
+    /// <returns>How many files were worth reporting.</returns>
+    public async Task<int> ScanDriveAsync(string root, int maxFiles, CancellationToken cancellationToken = default)
+    {
+        int scanned = 0;
+        int notable = 0;
+
+        await foreach (var verdict in ScanFolderAsync(root, recursive: true, cancellationToken)
+                           .ConfigureAwait(false))
+        {
+            scanned++;
+
+            if (verdict.WarrantsAlert)
+                notable++;
+
+            if (scanned >= maxFiles)
+            {
+                _log.Info("Sentinel",
+                    $"Stopped after {maxFiles:N0} files on {root}. There is more on the drive than " +
+                    "an automatic check should read without being asked — use Scan folder to go " +
+                    "through the rest.");
+                break;
+            }
+        }
+
+        return notable;
+    }
+
+    /// <summary>The drives a full scan covers. Anything not ready is skipped rather
+    /// than throwing — an empty card reader should not end a scan.</summary>
+    public static IReadOnlyList<string> FixedDriveRoots()
+    {
+        var roots = new List<string>();
+
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (drive.DriveType == DriveType.Fixed && drive.IsReady)
+                    roots.Add(drive.RootDirectory.FullName);
+            }
+            catch (IOException)
+            {
+                // A drive that disappeared between enumeration and the question.
+            }
+        }
+
+        return roots;
+    }
+
+    /// <summary>
     /// Skip file types no engine here has an opinion about. Scanning a user's photo
     /// library to conclude "unknown" 40,000 times wastes their disk and teaches them
     /// the report is noise.
@@ -489,6 +581,15 @@ public sealed class SentinelService : IDisposable
                 !options.ScanDownloads
                     ? "Turned off in Settings."
                     : _downloads.IsRunning ? "Watching your Downloads folder." : "No Downloads folder found."),
+
+            new ProtectionComponent(
+                "USB drive checks",
+                _removableDrives.IsRunning,
+                !options.ScanRemovableDrives
+                    ? "Turned off in Settings."
+                    : _removableDrives.IsRunning
+                        ? "A drive plugged in from now on gets looked at. It stays usable while that happens."
+                        : "Could not start — see the Log tab."),
 
             new ProtectionComponent(
                 "Known-good hashes",
