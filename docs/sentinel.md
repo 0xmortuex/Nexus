@@ -227,6 +227,42 @@ never fired for the operating system, and every scan of a Windows folder reporte
 thousands of files as unsigned. A scan of System32 (5,452 files) now produces no
 findings at all.
 
+## Checking the checks
+
+`tools/Nexus.Sweep` runs this scoring over a real folder and prints what would be
+reported. It exists because unit tests kept passing while the product was wrong.
+
+Every false positive of consequence in this module was written with a plausible
+rationale, covered by a test that agreed with it, and only fell over when pointed at
+an actual disk. Exempting minified JavaScript from the obfuscation rules looked
+correct and fixed almost nothing, because `typescript.js` is not minified and a lexer
+calls `String.fromCharCode` on every line. The future-timestamp rule fired on nearly
+every modern DLL. A .NET assembly with dense embedded resources was called "packed",
+and that only surfaced when a new dependency happened to include one.
+
+A test proves a rule does what its author meant. The sweep proves what the rule does
+to the machine it is installed on, which is a different question and the one that
+matters.
+
+```
+dotnet run --project tools/Nexus.Sweep -- "C:\Users\me\Downloads"
+dotnet run --project tools/Nexus.Sweep -- --running
+```
+
+It exits non-zero when anything is flagged, so it can gate a release. The expected
+result on a folder of ordinary software is zero. Current baselines on the development
+machine:
+
+| Target | Files | Reported |
+|---|---|---|
+| A Next.js project with `node_modules` | 18,899 | 0 |
+| `C:\Windows\System32` | 6,910 | 0 |
+| Programs running right now | 52 | 0 |
+| A planted PowerShell dropper | 1 | 1, at 63/100 |
+
+The last row is the control. Without it, "zero findings" only proves the tool has
+been quieted, not that it is right.
+
 ## Scan history
 
 Every scan is recorded: when, what, how many files, how many findings, and whether it
