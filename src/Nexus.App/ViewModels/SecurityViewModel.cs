@@ -23,6 +23,14 @@ public sealed class FindingRow
     public bool CanQuarantine => QuarantineService.RefusalReason(Verdict) is null;
 }
 
+/// <summary>One file the user has vouched for.</summary>
+public sealed class TrustedFileRow
+{
+    public required string IdentityKey { get; init; }
+    public required string Name { get; init; }
+    public required string When { get; init; }
+}
+
 /// <summary>One quarantined file the user can put back.</summary>
 public sealed class QuarantineRow
 {
@@ -57,6 +65,7 @@ public sealed class SecurityViewModel : ViewModelBase
 
     public ObservableCollection<FindingRow> Findings { get; } = [];
     public ObservableCollection<QuarantineRow> Quarantined { get; } = [];
+    public ObservableCollection<TrustedFileRow> TrustedFiles { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -73,6 +82,7 @@ public sealed class SecurityViewModel : ViewModelBase
 
         _sentinel.AlertsChanged += RefreshFindings;
         _journal.Changed += RefreshQuarantine;
+        _trust.Changed += RefreshTrusted;
 
         ScanFolderCommand = new RelayCommand(async p => await ScanFolderAsync(p as string), _ => !IsScanning);
         AuditStartupCommand = new RelayCommand(AuditStartup, () => !IsScanning);
@@ -84,10 +94,12 @@ public sealed class SecurityViewModel : ViewModelBase
         CheckDefenderCommand = new RelayCommand(CheckDefender);
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
+        RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
 
         RefreshDefenderStatus();
 
         RefreshQuarantine();
+        RefreshTrusted();
     }
 
     public string Status
@@ -118,6 +130,28 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand CheckDefenderCommand { get; }
     public RelayCommand CheckConnectionsCommand { get; }
     public RelayCommand QuickScanCommand { get; }
+    public RelayCommand RevokeTrustCommand { get; }
+
+    /// <summary>
+    /// Withdraw a trust decision.
+    ///
+    /// Trusting a file is a lasting security decision, and one the user makes in a
+    /// hurry from a dialog. A list they can never review or undo would be an
+    /// allowlist that only grows — so this needs no confirmation and no consent
+    /// token, because unlike everything else in this tab it only ever adds scrutiny.
+    /// </summary>
+    private void RevokeTrust(TrustedFileRow? row)
+    {
+        if (row is null)
+            return;
+
+        Status = _trust.Revoke(row.IdentityKey)
+            ? $"{row.Name} is no longer trusted. Nexus will report on it again."
+            : "That entry was already gone.";
+
+        RefreshTrusted();
+        RefreshFindings();
+    }
 
     /// <summary>
     /// Check the folders where new files actually arrive — Downloads, the temp
@@ -334,6 +368,24 @@ public sealed class SecurityViewModel : ViewModelBase
                     Origin = alert.Origin,
                     Reasons = string.Join(Environment.NewLine,
                         alert.Verdict.Reasons.Select(r => "• " + r.Explanation)),
+                });
+            }
+        });
+    }
+
+    private void RefreshTrusted()
+    {
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            TrustedFiles.Clear();
+
+            foreach (var decision in _trust.All())
+            {
+                TrustedFiles.Add(new TrustedFileRow
+                {
+                    IdentityKey = decision.IdentityKey,
+                    Name = decision.DisplayName,
+                    When = decision.DecidedAt.ToLocalTime().ToString("g"),
                 });
             }
         });

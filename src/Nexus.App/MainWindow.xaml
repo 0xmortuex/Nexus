@@ -622,6 +622,28 @@
                         </StackPanel>
                     </GroupBox>
 
+                    <GroupBox Header="Files you have trusted">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Trusting a file stops Nexus warning about it, but it keeps analysing it and its findings stay visible. Trust follows the file's contents, so if it is ever modified or replaced the trust is dropped automatically. Nothing here is permanent — take it back at any time."/>
+                            <ItemsControl ItemsSource="{Binding TrustedFiles}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,3">
+                                            <Button DockPanel.Dock="Right" Content="Stop trusting" Width="100"
+                                                    Command="{Binding DataContext.RevokeTrustCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <TextBlock Width="220" Text="{Binding Name}" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding When}" Style="{StaticResource DimText}"
+                                                       VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Quarantine">
                         <StackPanel>
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"

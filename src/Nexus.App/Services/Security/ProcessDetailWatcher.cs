@@ -95,8 +95,33 @@ public sealed class ProcessDetailWatcher : IDisposable
             };
 
             var finding = _engine.Observe(evt);
-            if (finding is not null)
-                FindingRaised?.Invoke(finding);
+            if (finding is null)
+                return;
+
+            // Add the launch chain. "powershell.exe did something odd" is a fact;
+            // "WINWORD.EXE started cmd.exe which started powershell.exe" is an
+            // explanation, and the engine already tracks the ancestry precisely so
+            // that this works even when the parent has already exited — which, for a
+            // dropper, it usually has.
+            var ancestry = _engine.AncestryOf(evt.Pid);
+            if (ancestry.Count > 1)
+            {
+                var chain = string.Join(" → ", ancestry.Reverse());
+                finding = finding with
+                {
+                    Signals =
+                    [
+                        .. finding.Signals,
+                        new Nexus.Core.Security.SecuritySignal(
+                            Nexus.Core.Security.SignalSource.Behavior,
+                            Nexus.Core.Security.SignalWeight.Informational,
+                            "beh-launch-chain",
+                            $"It was started like this: {chain}."),
+                    ],
+                };
+            }
+
+            FindingRaised?.Invoke(finding);
         }
         catch (Exception ex) when (ex is ManagementException or InvalidCastException or FormatException)
         {
