@@ -576,6 +576,69 @@ public sealed class SentinelService : IDisposable
     public ExclusionList Exclusions => new(_settings.Current.Security.Exclusions);
 
     /// <summary>
+    /// Add a path or extension Nexus will skip.
+    ///
+    /// Nothing is rejected for being too broad. Excluding a whole drive is a bad
+    /// idea, but it is the user's machine and the alternative — a tool that argues
+    /// with the person operating it — is how people end up turning the whole thing
+    /// off. What Nexus does instead is say so, every time, through
+    /// <see cref="ExclusionList.Audit"/>, and refuse to call an excluded file clean.
+    /// </summary>
+    /// <returns>A sentence for the UI to show. Never throws.</returns>
+    public string AddExclusion(string? pattern, string? note = null)
+    {
+        pattern = pattern?.Trim() ?? "";
+
+        if (pattern.Length == 0)
+            return "Type a folder path, or an extension like .log, first.";
+
+        var existing = _settings.Current.Security.Exclusions;
+
+        if (existing.Any(e => string.Equals(e.Pattern, pattern, StringComparison.OrdinalIgnoreCase)))
+            return $"{pattern} is already on the list.";
+
+        _settings.Update(settings =>
+        {
+            settings.Security.Exclusions = [.. existing, new Exclusion(pattern, note)];
+            return settings;
+        });
+
+        _log.Info("Sentinel", $"You asked Nexus to skip {pattern}.");
+
+        // Report the exclusion straight back if it is wide enough to matter.
+        var concerns = Exclusions.Audit();
+        string warning = concerns.Count > 0
+            ? " That is a broad exclusion — see the warning below it."
+            : "";
+
+        return $"Nexus will now skip {pattern}.{warning}";
+    }
+
+    /// <summary>Stop skipping something. Removing an exclusion never needs a warning.</summary>
+    public string RemoveExclusion(string? pattern)
+    {
+        if (pattern is not { Length: > 0 })
+            return "Pick an exclusion to remove.";
+
+        var existing = _settings.Current.Security.Exclusions;
+        var remaining = existing
+            .Where(e => !string.Equals(e.Pattern, pattern, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (remaining.Length == existing.Count)
+            return $"{pattern} was not on the list.";
+
+        _settings.Update(settings =>
+        {
+            settings.Security.Exclusions = remaining;
+            return settings;
+        });
+
+        _log.Info("Sentinel", $"Nexus will scan {pattern} again.");
+        return $"Nexus will scan {pattern} again.";
+    }
+
+    /// <summary>
     /// A verdict for a file the user asked Nexus not to look at.
     ///
     /// Deliberately "unknown" rather than "clean": Nexus did not examine it and must

@@ -31,6 +31,18 @@ public sealed class TrustedFileRow
     public required string When { get; init; }
 }
 
+/// <summary>One path or extension Nexus has been told to skip.</summary>
+public sealed class ExclusionRow
+{
+    public required string Pattern { get; init; }
+    public required string Kind { get; init; }
+
+    /// <summary>Empty unless this exclusion is wide enough to be worth warning about.</summary>
+    public required string Warning { get; init; }
+
+    public bool HasWarning => Warning.Length > 0;
+}
+
 /// <summary>One quarantined file the user can put back.</summary>
 public sealed class QuarantineRow
 {
@@ -70,6 +82,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public ObservableCollection<TrustedFileRow> TrustedFiles { get; } = [];
     public ObservableCollection<ProtectionComponent> Protection { get; } = [];
     public ObservableCollection<ConnectionInfo> Connections { get; } = [];
+    public ObservableCollection<ExclusionRow> Exclusions { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -109,6 +122,10 @@ public sealed class SecurityViewModel : ViewModelBase
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
         ToggleProtectionCommand = new RelayCommand(ToggleProtection);
+        AddExclusionCommand = new RelayCommand(AddExclusion);
+        RemoveExclusionCommand = new RelayCommand(p => RemoveExclusion(p as ExclusionRow));
+        BrowseExclusionCommand = new RelayCommand(BrowseForExclusion);
+        AuditSystemSettingsCommand = new RelayCommand(AuditSystemSettings);
 
         RefreshDefenderStatus();
 
@@ -122,6 +139,7 @@ public sealed class SecurityViewModel : ViewModelBase
         RefreshQuarantine();
         RefreshTrusted();
         RefreshProtection();
+        RefreshExclusions();
     }
 
     public string Status
@@ -155,6 +173,10 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand RevokeTrustCommand { get; }
     public RelayCommand RefreshProtectionCommand { get; }
     public RelayCommand ToggleProtectionCommand { get; }
+    public RelayCommand AddExclusionCommand { get; }
+    public RelayCommand RemoveExclusionCommand { get; }
+    public RelayCommand BrowseExclusionCommand { get; }
+    public RelayCommand AuditSystemSettingsCommand { get; }
 
     // ---- The big switch ----
     //
@@ -310,6 +332,107 @@ public sealed class SecurityViewModel : ViewModelBase
             foreach (var component in _sentinel.ProtectionStatus())
                 Protection.Add(component);
         });
+    }
+
+    // ---- Exclusions ----
+
+    private string _newExclusion = "";
+
+    /// <summary>What the user has typed, or picked with Browse, but not yet added.</summary>
+    public string NewExclusion
+    {
+        get => _newExclusion;
+        set => Set(ref _newExclusion, value);
+    }
+
+    /// <summary>
+    /// Fill the box with a folder chosen from a picker.
+    ///
+    /// Typing a path by hand is the step people get wrong, and an exclusion with a
+    /// typo in it silently does nothing — the worst kind of failure, because the user
+    /// believes they have switched something off and they have not.
+    /// </summary>
+    private void BrowseForExclusion()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Pick a folder for Nexus to skip",
+            Multiselect = false,
+        };
+
+        if (dialog.ShowDialog() == true)
+            NewExclusion = dialog.FolderName;
+    }
+
+    /// <summary>True when the skip list is empty, so the UI can say so plainly
+    /// instead of showing an unexplained blank area.</summary>
+    public bool SkipsNothing => Exclusions.Count == 0;
+
+    private void AddExclusion()
+    {
+        Status = _sentinel.AddExclusion(NewExclusion);
+        NewExclusion = "";
+        RefreshExclusions();
+    }
+
+    private void RemoveExclusion(ExclusionRow? row)
+    {
+        if (row is null)
+        {
+            Status = "Pick an exclusion to remove first.";
+            return;
+        }
+
+        Status = _sentinel.RemoveExclusion(row.Pattern);
+        RefreshExclusions();
+    }
+
+    /// <summary>
+    /// Rebuild the list, attaching each broad-exclusion warning to the row it is
+    /// about rather than showing them in a separate block. A warning next to the
+    /// thing it concerns gets read; a warning somewhere else does not.
+    /// </summary>
+    public void RefreshExclusions()
+    {
+        var list = _sentinel.Exclusions;
+        var concerns = list.Audit();
+
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            Exclusions.Clear();
+
+            foreach (var exclusion in list.All)
+            {
+                var warning = concerns.FirstOrDefault(c =>
+                    c.Explanation.Contains(exclusion.Pattern, StringComparison.OrdinalIgnoreCase));
+
+                Exclusions.Add(new ExclusionRow
+                {
+                    Pattern = exclusion.Pattern,
+                    Kind = exclusion.IsExtension ? "Every file of this type" : "Folder and everything in it",
+                    Warning = warning?.Explanation ?? "",
+                });
+            }
+
+            OnPropertyChanged(nameof(SkipsNothing));
+        });
+    }
+
+    // ---- System settings ----
+
+    /// <summary>
+    /// Check the hosts file, proxy and DNS — the settings malware changes to cut a
+    /// machine off from help. Nothing here involves a running program, so no other
+    /// part of Sentinel would ever notice it.
+    /// </summary>
+    private void AuditSystemSettings()
+    {
+        int found = _sentinel.AuditSystemSettings();
+
+        Status = found == 0
+            ? "Checked the hosts file, proxy and DNS servers. Nothing out of place."
+            : $"Checked the hosts file, proxy and DNS servers and found {found} thing(s) worth a " +
+              "look — they are in the findings list below. Nothing was changed.";
     }
 
     /// <summary>

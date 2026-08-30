@@ -91,7 +91,27 @@ public sealed class AuthenticodeVerifier
             return SignatureInfo.Unknown;
 
         var state = RunWinVerifyTrust(filePath);
-        var (signer, issuer, notAfter) = ReadCertificate(filePath);
+        string? catalogPath = null;
+
+        // Most of Windows carries no signature of its own. System files are signed in
+        // bulk through catalog (.cat) files, and asking WinVerifyTrust about the file
+        // alone returns "no signature" for notepad.exe, svchost.exe and explorer.exe
+        // alike. Without this fallback the strongest exoneration Nexus has —
+        // "signed by Microsoft" — never fires for the operating system, and every
+        // full scan reports thousands of Windows files as unsigned.
+        if (state == SignatureState.Unsigned)
+        {
+            var (catalogState, foundIn) = VerifyThroughCatalog(filePath);
+            if (catalogState != SignatureState.Unsigned)
+            {
+                state = catalogState;
+                catalogPath = foundIn;
+            }
+        }
+
+        var (signer, issuer, notAfter) = catalogPath is null
+            ? ReadCertificate(filePath)
+            : ReadCertificate(catalogPath);
 
         return new SignatureInfo
         {
@@ -139,6 +159,141 @@ public sealed class AuthenticodeVerifier
         {
             Marshal.DestroyStructure<WinTrustNative.WINTRUST_FILE_INFO>(fileInfoPtr);
             Marshal.FreeHGlobal(fileInfoPtr);
+        }
+    }
+
+    /// <summary>
+    /// Look the file's hash up in the system catalogs and, if it is a member of one,
+    /// verify it against that catalog.
+    ///
+    /// Returns the catalog's path as well, because the signer has to be read from the
+    /// .cat file — the file itself contains no certificate to read.
+    /// </summary>
+    private (SignatureState State, string? CatalogPath) VerifyThroughCatalog(string filePath)
+    {
+        IntPtr catalogAdmin = IntPtr.Zero;
+        IntPtr catalogContext = IntPtr.Zero;
+        FileStream? file = null;
+
+        try
+        {
+            var subsystem = WinTrustNative.DRIVER_ACTION_VERIFY;
+            if (!WinTrustNative.CryptCATAdminAcquireContext(out catalogAdmin, ref subsystem, 0))
+                return (SignatureState.Unsigned, null);
+
+            file = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            IntPtr handle = file.SafeFileHandle.DangerousGetHandle();
+
+            // Ask for the hash length first, then for the hash itself.
+            uint hashLength = 0;
+            WinTrustNative.CryptCATAdminCalcHashFromFileHandle(handle, ref hashLength, null, 0);
+            if (hashLength == 0)
+                return (SignatureState.Unsigned, null);
+
+            var hash = new byte[hashLength];
+            if (!WinTrustNative.CryptCATAdminCalcHashFromFileHandle(handle, ref hashLength, hash, 0))
+                return (SignatureState.Unsigned, null);
+
+            IntPtr previous = IntPtr.Zero;
+            catalogContext = WinTrustNative.CryptCATAdminEnumCatalogFromHash(
+                catalogAdmin, hash, hashLength, 0, ref previous);
+
+            // Not a member of any catalog. Genuinely unsigned, as far as Windows knows.
+            if (catalogContext == IntPtr.Zero)
+                return (SignatureState.Unsigned, null);
+
+            var info = new WinTrustNative.CATALOG_INFO
+            {
+                cbStruct = (uint)Marshal.SizeOf<WinTrustNative.CATALOG_INFO>(),
+                wszCatalogFile = "",
+            };
+
+            if (!WinTrustNative.CryptCATCatalogInfoFromContext(catalogContext, ref info, 0))
+                return (SignatureState.Unsigned, null);
+
+            return (RunCatalogVerify(filePath, info.wszCatalogFile, hash), info.wszCatalogFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or SEHException or EntryPointNotFoundException or DllNotFoundException)
+        {
+            return (SignatureState.Unsigned, null);
+        }
+        finally
+        {
+            file?.Dispose();
+
+            if (catalogContext != IntPtr.Zero)
+                WinTrustNative.CryptCATAdminReleaseCatalogContext(catalogAdmin, catalogContext, 0);
+
+            if (catalogAdmin != IntPtr.Zero)
+                WinTrustNative.CryptCATAdminReleaseContext(catalogAdmin, 0);
+        }
+    }
+
+    /// <summary>Verify one file against one catalog. The member tag is the file's
+    /// hash as an uppercase hex string; that is the form the catalog indexes by.</summary>
+    private SignatureState RunCatalogVerify(string filePath, string catalogPath, byte[] hash)
+    {
+        IntPtr hashBuffer = Marshal.AllocHGlobal(hash.Length);
+        IntPtr catalogInfoPtr = IntPtr.Zero;
+
+        try
+        {
+            Marshal.Copy(hash, 0, hashBuffer, hash.Length);
+
+            var catalogInfo = new WinTrustNative.WINTRUST_CATALOG_INFO
+            {
+                cbStruct = (uint)Marshal.SizeOf<WinTrustNative.WINTRUST_CATALOG_INFO>(),
+                dwCatalogVersion = 0,
+                pcwszCatalogFilePath = catalogPath,
+                pcwszMemberTag = Convert.ToHexString(hash),
+                pcwszMemberFilePath = filePath,
+                hMemberFile = IntPtr.Zero,
+                pbCalculatedFileHash = hashBuffer,
+                cbCalculatedFileHash = (uint)hash.Length,
+                pcCatalogContext = IntPtr.Zero,
+                hCatAdmin = IntPtr.Zero,
+            };
+
+            catalogInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf(catalogInfo));
+            Marshal.StructureToPtr(catalogInfo, catalogInfoPtr, fDeleteOld: false);
+
+            var data = new WinTrustNative.WINTRUST_DATA
+            {
+                cbStruct = (uint)Marshal.SizeOf<WinTrustNative.WINTRUST_DATA>(),
+                dwUIChoice = WinTrustNative.WTD_UI_NONE,
+                fdwRevocationChecks = _checkRevocation
+                    ? WinTrustNative.WTD_REVOKE_WHOLECHAIN
+                    : WinTrustNative.WTD_REVOKE_NONE,
+                dwUnionChoice = WinTrustNative.WTD_CHOICE_CATALOG,
+                pFile = catalogInfoPtr,
+                dwStateAction = WinTrustNative.WTD_STATEACTION_VERIFY,
+                dwProvFlags = WinTrustNative.WTD_CACHE_ONLY_URL_RETRIEVAL,
+            };
+
+            var action = WinTrustNative.WINTRUST_ACTION_GENERIC_VERIFY_V2;
+            int result = WinTrustNative.WinVerifyTrust(IntPtr.Zero, ref action, ref data);
+
+            data.dwStateAction = WinTrustNative.WTD_STATEACTION_CLOSE;
+            WinTrustNative.WinVerifyTrust(IntPtr.Zero, ref action, ref data);
+
+            return Map(result);
+        }
+        catch (Exception ex) when (ex is SEHException or EntryPointNotFoundException or DllNotFoundException)
+        {
+            _log.Warn("Sentinel", $"Catalog check failed for {Path.GetFileName(filePath)}: {ex.Message}");
+            return SignatureState.Unsigned;
+        }
+        finally
+        {
+            if (catalogInfoPtr != IntPtr.Zero)
+            {
+                Marshal.DestroyStructure<WinTrustNative.WINTRUST_CATALOG_INFO>(catalogInfoPtr);
+                Marshal.FreeHGlobal(catalogInfoPtr);
+            }
+
+            Marshal.FreeHGlobal(hashBuffer);
         }
     }
 

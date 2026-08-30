@@ -681,8 +681,56 @@
                                         Command="{Binding AuditStartupCommand}"/>
                                 <Button Content="Check connections" Margin="0,0,8,0"
                                         Command="{Binding CheckConnectionsCommand}"/>
+                                <Button Content="Check network settings" Margin="0,0,8,0"
+                                        ToolTip="Checks the hosts file, proxy and DNS servers — the settings malware changes to cut you off from help."
+                                        Command="{Binding AuditSystemSettingsCommand}"/>
                                 <Button Content="Stop" Command="{Binding CancelScanCommand}"/>
                             </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Files Nexus skips">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Anything listed here is not scanned at all. This is how you stop Nexus reporting your build output or a folder you already trust. Nexus will still tell you it skipped something rather than calling it clean."/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBox Width="300" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                         Text="{Binding NewExclusion, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="A folder path, or an extension such as .log"/>
+                                <Button Content="Browse…" Margin="0,0,8,0"
+                                        Command="{Binding BrowseExclusionCommand}"/>
+                                <Button Content="Skip this" Command="{Binding AddExclusionCommand}"/>
+                            </StackPanel>
+
+                            <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,6"
+                                       Text="Nothing is skipped yet. Everything Nexus can reach gets scanned."
+                                       Visibility="{Binding SkipsNothing, Converter={StaticResource BoolToVisibility}}"/>
+
+                            <ItemsControl ItemsSource="{Binding Exclusions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#3A4256" BorderThickness="0,0,0,1" Padding="0,6">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Content="Scan it again"
+                                                            Command="{Binding DataContext.RemoveExclusionCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Pattern}" FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding Kind}" Style="{StaticResource DimText}"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding Warning}" TextWrapping="Wrap"
+                                                           Foreground="#E2B341" Margin="0,4,0,0"
+                                                           Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </GroupBox>
 

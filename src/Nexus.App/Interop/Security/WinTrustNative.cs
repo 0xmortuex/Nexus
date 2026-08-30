@@ -18,8 +18,16 @@ internal static class WinTrustNative
     internal const uint WTD_REVOKE_NONE = 0;
     internal const uint WTD_REVOKE_WHOLECHAIN = 1;
 
+    /// <summary>
+    /// Identifies the catalog subsystem. Named for driver verification, but it is
+    /// the context every catalog lookup uses, drivers or not.
+    /// </summary>
+    internal static readonly Guid DRIVER_ACTION_VERIFY =
+        new("F750E6C3-38EE-11d1-85E5-00C04FC295EE");
+
     // ---- WINTRUST_DATA.dwUnionChoice ----
     internal const uint WTD_CHOICE_FILE = 1;
+    internal const uint WTD_CHOICE_CATALOG = 2;
 
     // ---- WINTRUST_DATA.dwStateAction ----
     internal const uint WTD_STATEACTION_VERIFY = 1;
@@ -71,6 +79,65 @@ internal static class WinTrustNative
         public IntPtr pSignatureSettings;
     }
 
+    /// <summary>
+    /// Describes a file being verified against a catalog rather than against a
+    /// signature embedded in itself.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WINTRUST_CATALOG_INFO
+    {
+        public uint cbStruct;
+        public uint dwCatalogVersion;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pcwszCatalogFilePath;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pcwszMemberTag;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pcwszMemberFilePath;
+        public IntPtr hMemberFile;
+        public IntPtr pbCalculatedFileHash;
+        public uint cbCalculatedFileHash;
+        public IntPtr pcCatalogContext;
+        public IntPtr hCatAdmin;
+    }
+
+    internal const int MAX_PATH = 260;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct CATALOG_INFO
+    {
+        public uint cbStruct;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MAX_PATH)]
+        public string wszCatalogFile;
+    }
+
     [DllImport("wintrust.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     internal static extern int WinVerifyTrust(IntPtr hwnd, ref Guid pgActionID, ref WINTRUST_DATA pWVTData);
+
+    // ---- Catalog lookup ----
+
+    [DllImport("wintrust.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CryptCATAdminAcquireContext(
+        out IntPtr phCatAdmin, ref Guid pgSubsystem, uint dwFlags);
+
+    [DllImport("wintrust.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CryptCATAdminReleaseContext(IntPtr hCatAdmin, uint dwFlags);
+
+    [DllImport("wintrust.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CryptCATAdminCalcHashFromFileHandle(
+        IntPtr hFile, ref uint pcbHash, byte[]? pbHash, uint dwFlags);
+
+    [DllImport("wintrust.dll", SetLastError = true, ExactSpelling = true)]
+    internal static extern IntPtr CryptCATAdminEnumCatalogFromHash(
+        IntPtr hCatAdmin, byte[] pbHash, uint cbHash, uint dwFlags, ref IntPtr phPrevCatInfo);
+
+    [DllImport("wintrust.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CryptCATAdminReleaseCatalogContext(
+        IntPtr hCatAdmin, IntPtr hCatInfo, uint dwFlags);
+
+    [DllImport("wintrust.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CryptCATCatalogInfoFromContext(
+        IntPtr hCatInfo, ref CATALOG_INFO psCatInfo, uint dwFlags);
 }
