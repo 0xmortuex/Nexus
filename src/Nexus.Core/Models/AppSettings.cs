@@ -34,9 +34,38 @@ public sealed record MemoryOptions
     public int FreeMemoryThresholdMb { get; init; } = 1024;
 }
 
+/// <summary>
+/// What the security module is allowed to do.
+///
+/// Everything here is on by default and everything here can be turned off, because
+/// two of these features are not passive: the ransomware watch writes real files into
+/// the user's own folders, and behaviour monitoring runs a WMI query once a second.
+/// A tool that puts files on your disk and watches your filesystem has to let you
+/// say no, and a switch that only appears after you have already been opted in is
+/// not really a switch.
+/// </summary>
+public sealed record SecurityOptions
+{
+    /// <summary>Watch process launches for suspicious command lines and masquerading.
+    /// Costs a WMI event subscription polled once a second.</summary>
+    public bool BehaviourMonitoring { get; init; } = true;
+
+    /// <summary>Plant tripwire files and watch document folders for mass changes.
+    /// This writes hidden files into Documents, Pictures, Videos, Music and Desktop.</summary>
+    public bool RansomwareWatch { get; init; } = true;
+
+    /// <summary>Scan new programs that appear in the Downloads folder.</summary>
+    public bool ScanDownloads { get; init; } = true;
+
+    /// <summary>Check Microsoft Defender's health at startup.</summary>
+    public bool CheckDefenderHealth { get; init; } = true;
+}
+
 /// <summary>Root settings document (settings.json). Extended stage by stage.</summary>
 public sealed record AppSettings
 {
+    public SecurityOptions Security { get; init; } = new();
+
     public ProBalanceOptions ProBalance { get; init; } = new();
     public EnforcementOptions Enforcement { get; init; } = new();
     public IdleSaverOptions IdleSaver { get; init; } = new();

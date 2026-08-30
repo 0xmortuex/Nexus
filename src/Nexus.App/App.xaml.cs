@@ -118,7 +118,7 @@ public partial class App : System.Windows.Application
         var sentinel = new SentinelService(
             log, fileIdentity, signatures, reputation, scannerHost,
             autoruns, behaviourWatcher, trustStore, verdictCache,
-            ransomwareGuard, defenderHealth, networkMonitor);
+            ransomwareGuard, defenderHealth, networkMonitor, settings);
 
         var tweakState = new TweakStateStore(paths);
         var registryApplier = new RegistryTweakApplier();
@@ -128,10 +128,15 @@ public partial class App : System.Windows.Application
         var cleaner = new CleanerService(log);
         var startup = new StartupManagerService(log);
         var autostart = new AutostartService(log);
-        var suggestions = new SuggestionService(tweaks, debloat, settings, games, power, topology, log);
+        var suggestions = new SuggestionService(
+            tweaks, debloat, settings, games, power, topology,
+            throttleDetector, () => sentinel.DefenderStatus, log);
         var rating = new RatingService(tweaks, debloat, dns, settings, games, topology, () => keepAwake.Enabled);
+        var sentinelReset = new SentinelResetService(
+            quarantine, quarantineJournal, trustStore, verdictCache, baselines, ransomwareGuard, log);
         var restoreDefaults = new RestoreDefaultsService(
-            tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns, log);
+            tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns,
+            sentinelReset, log);
 
         _disposables.AddRange([watcher, ruleApplication, proBalance, enforcement,
             idleSaver, smartTrim, keepAwake, standby, foreground, gameMode,
@@ -160,7 +165,7 @@ public partial class App : System.Windows.Application
         // ---- UI ----
         var mainViewModel = new MainViewModel(settings)
         {
-            Dashboard = new DashboardViewModel(proBalance, rules, topology, rating),
+            Dashboard = new DashboardViewModel(proBalance, rules, topology, rating, sentinel),
             Suggestions = new SuggestionsViewModel(suggestions),
             Processes = new ProcessesViewModel(proBalance, api, rules, ruleApplication, limiter, ifeo, log),
             GameMode = new GameModeViewModel(gameMode, games, settings, topology.Topology.IsHybrid),
@@ -173,7 +178,7 @@ public partial class App : System.Windows.Application
             RestoreDefaultsCommand = new RelayCommand(() =>
             {
                 if (MessageBox.Show(
-                        "Undo every tweak, re-enable disabled services and tasks, clear all process rules and game profiles, remove the Nexus power plan, and turn off autostart?",
+                        "Undo every tweak, re-enable disabled services and tasks, clear all process rules and game profiles, remove the Nexus power plan, turn off autostart, put any quarantined files back, and remove the ransomware tripwire files?",
                         "Nexus — Restore all defaults", MessageBoxButton.YesNo, MessageBoxImage.Warning)
                     != MessageBoxResult.Yes)
                     return;

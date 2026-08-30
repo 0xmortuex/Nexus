@@ -49,6 +49,20 @@
                         <controls:CoreBarsControl Values="{Binding PerCore}" ECoreMask="{Binding ECoreMask}" Height="90"/>
                         <TextBlock Style="{StaticResource DimText}" Margin="0,6,0,0"
                                    Text="Blue bars are P-cores/standard cores, green bars are E-cores."/>
+
+                        <!-- Security is shown as its own line, never folded into the
+                             optimization score: "how well tuned" and "is it compromised"
+                             are different questions, and averaging them would let a
+                             machine with malware read as well-optimized. -->
+                        <Border Margin="0,16,0,0" CornerRadius="4" Padding="10" Background="#232A3A">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource H1}" Text="Security"/>
+                                <TextBlock Margin="0,4,0,0" FontWeight="SemiBold"
+                                           Text="{Binding SecurityHeadline}"/>
+                                <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                           Text="{Binding SecurityDetail}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                     <StackPanel Grid.Column="1">
                         <GroupBox Header="System optimization rating">
@@ -776,6 +790,31 @@
         <TabItem Header="Settings">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="10" DataContext="{Binding Settings}" MaxWidth="640" HorizontalAlignment="Left">
+                    <GroupBox Header="Security (Sentinel)">
+                        <StackPanel>
+                            <CheckBox Content="Watch process launches for suspicious behaviour"
+                                      IsChecked="{Binding BehaviourMonitoring}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
+                                       Text="Costs one WMI subscription polled once a second. Turn off if you want zero background monitoring."/>
+
+                            <CheckBox Content="Ransomware watch (plants hidden tripwire files)"
+                                      IsChecked="{Binding RansomwareWatch}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
+                                       Text="This one writes real files into your Documents, Pictures, Videos, Music and Desktop folders. Turning it off removes them on the next start."/>
+
+                            <CheckBox Content="Check new downloads as they arrive"
+                                      IsChecked="{Binding ScanDownloads}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
+                                       Text="Scans programs and archives that appear in your Downloads folder, and only says something if there is something to say."/>
+
+                            <CheckBox Content="Check Microsoft Defender's health at startup"
+                                      IsChecked="{Binding CheckDefenderHealth}"/>
+
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="These take effect the next time Nexus starts. Stopping a running monitor halfway would leave it looking active while reporting nothing, which is worse than waiting."/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="ProBalance thresholds">
                         <Grid>
                             <Grid.ColumnDefinitions>

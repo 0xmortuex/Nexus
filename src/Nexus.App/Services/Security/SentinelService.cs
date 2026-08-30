@@ -1,6 +1,7 @@
 using System.IO;
 using Nexus.App.Interop.Security;
 using Nexus.Core.Logging;
+using Nexus.Core.Persistence;
 using Nexus.Core.Security;
 using Nexus.Core.Security.Behavior;
 using Nexus.Core.Security.Persistence;
@@ -39,6 +40,8 @@ public sealed class SentinelService : IDisposable
     private readonly RansomwareGuardService _ransomware;
     private readonly DefenderHealthService _defender;
     private readonly NetworkMonitorService _network;
+    private readonly SettingsService _settings;
+    private readonly DownloadWatcherService _downloads;
 
     private readonly List<SecurityAlert> _alerts = [];
     private readonly object _gate = new();
@@ -60,7 +63,8 @@ public sealed class SentinelService : IDisposable
         VerdictCache cache,
         RansomwareGuardService ransomware,
         DefenderHealthService defender,
-        NetworkMonitorService network)
+        NetworkMonitorService network,
+        SettingsService settings)
     {
         _log = log;
         _identity = identity;
@@ -74,6 +78,8 @@ public sealed class SentinelService : IDisposable
         _ransomware = ransomware;
         _defender = defender;
         _network = network;
+        _settings = settings;
+        _downloads = new DownloadWatcherService(log, ScanDownloadAsync);
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -91,14 +97,28 @@ public sealed class SentinelService : IDisposable
     public void Start()
     {
         _reputation.Load();
+        var options = _settings.Current.Security;
 
-        _behaviour.FindingRaised += OnBehaviourFinding;
-        _behaviour.Start();
+        // Each feature is opt-out. Two of them are not passive — the ransomware watch
+        // writes files into the user's own folders and behaviour monitoring runs a
+        // WMI subscription — so honouring the switch matters more than convenience.
+        if (options.BehaviourMonitoring)
+        {
+            _behaviour.FindingRaised += OnBehaviourFinding;
+            _behaviour.Start();
+        }
 
-        _ransomware.Detected += OnRansomwareFinding;
-        _ransomware.Start();
+        if (options.RansomwareWatch)
+        {
+            _ransomware.Detected += OnRansomwareFinding;
+            _ransomware.Start();
+        }
 
-        ReportDefenderHealth();
+        if (options.ScanDownloads)
+            _downloads.Start();
+
+        if (options.CheckDefenderHealth)
+            ReportDefenderHealth();
 
         _log.Info("Sentinel",
             _scanner.IsAvailable
@@ -240,6 +260,25 @@ public sealed class SentinelService : IDisposable
             $"Checked {verdicts.Count} startup items; {verdicts.Count(v => v.WarrantsAlert)} worth a look.");
 
         return verdicts;
+    }
+
+    // ---- Downloads ----
+
+    /// <summary>
+    /// Scan a file that has just arrived. Only speaks up when there is something to
+    /// say: a download that turns out to be unremarkable should be silent, or the
+    /// feature becomes a notification the user learns to dismiss.
+    /// </summary>
+    private async Task ScanDownloadAsync(string path, CancellationToken cancellationToken)
+    {
+        var verdict = await ScanFileAsync(path, cancellationToken).ConfigureAwait(false);
+
+        if (verdict.WarrantsAlert)
+        {
+            _log.Warn("Sentinel",
+                $"A file you just downloaded is worth a look before you open it. {verdict.Headline} " +
+                "Nothing has been blocked or moved.");
+        }
     }
 
     // ---- Ransomware ----
@@ -387,6 +426,7 @@ public sealed class SentinelService : IDisposable
         _behaviour.Dispose();
         _ransomware.Detected -= OnRansomwareFinding;
         _ransomware.Dispose();
+        _downloads.Dispose();
         _scanner.Dispose();
     }
 }

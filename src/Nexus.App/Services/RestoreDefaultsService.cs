@@ -1,3 +1,4 @@
+using Nexus.App.Services.Security;
 using Nexus.App.TweaksImpl;
 using Nexus.Core.GameMode;
 using Nexus.Core.Logging;
@@ -8,7 +9,12 @@ namespace Nexus.App.Services;
 /// <summary>
 /// The "Restore all defaults" button: undoes every tweak from the state store,
 /// re-enables debloated services/tasks, reverts any pending game-mode journal,
-/// removes the Nexus power plan, clears all process rules, and disables autostart.
+/// removes the Nexus power plan, clears all process rules, disables autostart, and
+/// resets the security module.
+///
+/// The security reset runs FIRST. It is the only step that can be holding the user's
+/// own files (in quarantine), and putting those back must not be at the mercy of an
+/// earlier step failing partway through.
 /// </summary>
 public sealed class RestoreDefaultsService
 {
@@ -22,6 +28,7 @@ public sealed class RestoreDefaultsService
     private readonly AutostartService _autostart;
     private readonly KeepAwakeService _keepAwake;
     private readonly DnsService _dns;
+    private readonly SentinelResetService _sentinelReset;
     private readonly ActivityLog _log;
 
     public RestoreDefaultsService(
@@ -35,6 +42,7 @@ public sealed class RestoreDefaultsService
         AutostartService autostart,
         KeepAwakeService keepAwake,
         DnsService dns,
+        SentinelResetService sentinelReset,
         ActivityLog log)
     {
         _tweaks = tweaks;
@@ -47,6 +55,7 @@ public sealed class RestoreDefaultsService
         _autostart = autostart;
         _keepAwake = keepAwake;
         _dns = dns;
+        _sentinelReset = sentinelReset;
         _log = log;
     }
 
@@ -55,6 +64,10 @@ public sealed class RestoreDefaultsService
     {
         _log.Info("Restore", "Restoring all defaults…");
         var failures = new List<string>();
+
+        // Security first: quarantined files are the user's own data, and getting them
+        // back must not depend on every later step succeeding.
+        failures.AddRange(_sentinelReset.ResetEverything());
 
         _gameMode.EndManually();
         _recovery.RecoverIfNeeded();
@@ -76,7 +89,8 @@ public sealed class RestoreDefaultsService
 
         _log.Info("Restore",
             failures.Count == 0
-                ? "All defaults restored: tweaks undone, services/tasks re-enabled, rules cleared, power plan removed."
+                ? "All defaults restored: tweaks undone, services/tasks re-enabled, rules cleared, " +
+                  "power plan removed, quarantined files put back and tripwire files removed."
                 : $"Defaults restored with {failures.Count} item(s) needing attention.");
         return failures;
     }

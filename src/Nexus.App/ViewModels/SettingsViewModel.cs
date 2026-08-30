@@ -18,6 +18,36 @@ public sealed class SettingsViewModel : ViewModelBase
         keepAwake.EnabledChanged += _ => OnPropertyChanged(nameof(KeepAwake));
     }
 
+    // ---- Security ----
+    // Changes here take effect on the next start: stopping a running WMI subscription
+    // or tearing down filesystem watchers midway is a good way to leave the module in
+    // a half-on state that reports nothing while looking active. Saying "after a
+    // restart" is honest; silently doing nothing would not be.
+
+    public bool BehaviourMonitoring
+    {
+        get => _settings.Current.Security.BehaviourMonitoring;
+        set { _settings.Update(s => s with { Security = s.Security with { BehaviourMonitoring = value } }); OnPropertyChanged(); }
+    }
+
+    public bool RansomwareWatch
+    {
+        get => _settings.Current.Security.RansomwareWatch;
+        set { _settings.Update(s => s with { Security = s.Security with { RansomwareWatch = value } }); OnPropertyChanged(); }
+    }
+
+    public bool ScanDownloads
+    {
+        get => _settings.Current.Security.ScanDownloads;
+        set { _settings.Update(s => s with { Security = s.Security with { ScanDownloads = value } }); OnPropertyChanged(); }
+    }
+
+    public bool CheckDefenderHealth
+    {
+        get => _settings.Current.Security.CheckDefenderHealth;
+        set { _settings.Update(s => s with { Security = s.Security with { CheckDefenderHealth = value } }); OnPropertyChanged(); }
+    }
+
     // ---- ProBalance ----
     public double LoadEnterPct
     {

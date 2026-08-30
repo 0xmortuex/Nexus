@@ -1,5 +1,6 @@
 using Nexus.App.Interop;
 using Nexus.App.Services;
+using Nexus.App.Services.Security;
 using Nexus.Core.Models;
 using Nexus.Core.Rules;
 
@@ -15,17 +16,60 @@ public sealed class DashboardViewModel : ViewModelBase
     private readonly RulesRepository _rules;
     private readonly CpuTopologyProvider _topology;
     private readonly Services.RatingService _rating;
+    private readonly SentinelService _sentinel;
     private readonly Queue<double> _cpuHistory = new(HistoryLength);
     private readonly Queue<double> _ramHistory = new(HistoryLength);
 
     public DashboardViewModel(ProBalanceService proBalance, RulesRepository rules,
-        CpuTopologyProvider topology, Services.RatingService rating)
+        CpuTopologyProvider topology, Services.RatingService rating, SentinelService sentinel)
     {
         _proBalance = proBalance;
         _rules = rules;
         _topology = topology;
         _rating = rating;
+        _sentinel = sentinel;
+        _sentinel.AlertsChanged += RefreshSecurity;
         RefreshRating();
+        RefreshSecurity();
+    }
+
+    // ---- Security state ----
+    //
+    // Deliberately kept OUT of the optimization rating. They measure different things:
+    // one is how well tuned the machine is, the other is whether it is compromised.
+    // Averaging them into a single number would make a machine with malware look
+    // "85% optimized", which is worse than useless.
+
+    public string SecurityHeadline { get; private set; } = "";
+    public string SecurityDetail { get; private set; } = "";
+
+    /// <summary>True when something is wrong enough to colour the panel.</summary>
+    public bool SecurityNeedsAttention { get; private set; }
+
+    public void RefreshSecurity()
+    {
+        var unresolved = _sentinel.Alerts.Count(a => a.Verdict.WarrantsAlert);
+        var defender = _sentinel.DefenderStatus;
+
+        bool defenderOff = defender.Available && defender.RealTimeProtectionEnabled == false;
+        SecurityNeedsAttention = defenderOff || unresolved > 0;
+
+        SecurityHeadline = defenderOff
+            ? "Microsoft Defender is off"
+            : unresolved > 0
+                ? $"{unresolved} finding(s) worth a look"
+                : "Nothing flagged";
+
+        SecurityDetail = defenderOff
+            ? "Real-time protection is switched off. Nexus reports what it finds; Defender is what " +
+              "actually blocks it."
+            : unresolved > 0
+                ? "Open the Security tab to read the reasons. Nothing has been changed."
+                : _sentinel.DefenderSummary;
+
+        OnPropertyChanged(nameof(SecurityHeadline));
+        OnPropertyChanged(nameof(SecurityDetail));
+        OnPropertyChanged(nameof(SecurityNeedsAttention));
     }
 
     // ---- System optimization rating ----

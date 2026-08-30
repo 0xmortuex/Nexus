@@ -1,4 +1,6 @@
 using Microsoft.Win32;
+using Nexus.App.Services.Performance;
+using Nexus.App.Services.Security;
 using Nexus.App.TweaksImpl;
 using Nexus.Core.GameMode;
 using Nexus.Core.Logging;
@@ -22,6 +24,8 @@ public sealed class SuggestionService
     private readonly GameProfileRepository _games;
     private readonly PowerPlanService _power;
     private readonly Interop.CpuTopologyProvider _topology;
+    private readonly ThrottleDetectorService _throttle;
+    private readonly Func<DefenderStatus> _defenderStatus;
     private readonly ActivityLog _log;
 
     public SuggestionService(
@@ -31,6 +35,8 @@ public sealed class SuggestionService
         GameProfileRepository games,
         PowerPlanService power,
         Interop.CpuTopologyProvider topology,
+        ThrottleDetectorService throttle,
+        Func<DefenderStatus> defenderStatus,
         ActivityLog log)
     {
         _tweaks = tweaks;
@@ -39,6 +45,8 @@ public sealed class SuggestionService
         _games = games;
         _power = power;
         _topology = topology;
+        _throttle = throttle;
+        _defenderStatus = defenderStatus;
         _log = log;
     }
 
@@ -47,6 +55,12 @@ public sealed class SuggestionService
     private SystemFacts CollectFacts()
     {
         var settings = _settings.Current;
+
+        // Measured facts, not settings. These are the ones that can make every other
+        // suggestion on the list irrelevant.
+        var throttle = _throttle.Detect();
+        var defender = _defenderStatus();
+
         return new SystemFacts
         {
             GameDvrCaptureEnabled = !_tweaks.IsApplied("gamedvr-off"),
@@ -62,6 +76,14 @@ public sealed class SuggestionService
             IsHybridCpu = _topology.Topology.IsHybrid,
             GameProfileCount = _games.All().Count,
             NexusPerformancePlanExists = settings.Power.PerformancePlanGuid is not null,
+
+            ThrottledByPowerPlan = throttle is { Cause: Core.Performance.ThrottleCause.PowerPlan },
+            ThrottledByFirmware = throttle is { Cause: Core.Performance.ThrottleCause.FirmwareOrThermal },
+            ThrottleCeilingPercent = throttle?.CeilingPercent ?? 100,
+
+            DefenderRealTimeOff = defender.Available && defender.RealTimeProtectionEnabled == false,
+            DefenderHasBroadExclusion = DefenderHealthService.Evaluate(defender)
+                .Any(signal => signal.Code == "defender-broad-exclusion"),
         };
     }
 

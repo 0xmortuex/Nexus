@@ -168,6 +168,54 @@ public sealed class RansomwareGuardService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Delete the tripwire files. Called by "Restore all defaults", because these are
+    /// real files Nexus put in the user's own folders and leaving them behind would
+    /// make that button a lie.
+    /// </summary>
+    public IReadOnlyList<string> RemoveCanaries()
+    {
+        string[] paths;
+        lock (_gate)
+        {
+            paths = _canaryPaths.ToArray();
+            _canaryPaths.Clear();
+        }
+
+        var failures = new List<string>();
+
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failures.Add($"Tripwire file: could not remove {path} — {ex.Message}");
+            }
+        }
+
+        // Also sweep for tripwires left by an older run whose paths this instance
+        // never learned — a previous install, or a folder that has since moved.
+        foreach (var folder in DefaultWatchFolders())
+        {
+            try
+            {
+                foreach (var stale in Directory.EnumerateFiles(folder, CanaryPrefix + "*"))
+                    File.Delete(stale);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failures.Add($"Tripwire file: could not clean {folder} — {ex.Message}");
+            }
+        }
+
+        _log.Info("Restore", $"Removed {paths.Length} ransomware tripwire file(s).");
+        return failures;
+    }
+
     // ---- Watching ----
 
     private void StartWatching(string folder)

@@ -280,3 +280,43 @@ logic; everything below is the part that talks to the OS.
 - [ ] "Check connections" returns a count close to `netstat -ano | find "ESTABLISHED"`.
 - [ ] Run a portable tool from `%TEMP%` that makes a connection → flagged.
 - [ ] Normal browsing produces no findings (it must not flag ordinary HTTPS).
+
+## 10. Integration and reset
+
+### Restore all defaults (this one touches user data)
+- [ ] Quarantine a file, then click "Restore ALL defaults" → the file is **put back at
+      its original path**, not deleted and not left orphaned in the quarantine folder.
+      This is the single most important check in this document: getting it wrong
+      destroys data the user explicitly asked to be kept safe.
+- [ ] Quarantine a file, make its original folder unwritable, then restore defaults →
+      the failure is reported, and the journal entry is **kept** so the file is still
+      findable rather than stranded under a random name.
+- [ ] After restore defaults, the hidden tripwire files are gone from Documents,
+      Pictures, Videos, Music and Desktop.
+- [ ] After restore defaults, the trusted-file list and saved baselines are empty.
+- [ ] Restore defaults on a machine where Sentinel never ran → completes without error.
+
+### Settings
+- [ ] Turn off "Ransomware watch", restart → no tripwire files are planted, and the
+      existing ones are removed.
+- [ ] Turn off "Watch process launches", restart → no WMI subscription is created
+      (check with `Get-WmiObject -Namespace root\subscription -Class __EventFilter`).
+- [ ] Turn off "Check new downloads", restart → downloading a program raises nothing.
+- [ ] With everything off, the rest of Nexus still works normally.
+
+### Downloads
+- [ ] Download a large installer in Chrome/Edge → it is checked once, **after** the
+      `.crdownload` rename completes, not while partially written.
+- [ ] Download something unremarkable → nothing is logged. Silence on ordinary files
+      is the requirement; a notification per download would train the user to ignore it.
+- [ ] Download an EICAR test file → a warning appears and the file is **not** moved.
+
+### Suggestions and dashboard
+- [ ] With the power plan capped to 50%, the Suggestions list shows the throttle
+      **above** the registry tweaks.
+- [ ] On a thermally throttled laptop, the firmware suggestion appears as a hint with
+      **no Apply button**.
+- [ ] Turn Defender's real-time protection off → it appears in Suggestions and on the
+      Dashboard security panel. Turn it back on afterwards.
+- [ ] The Dashboard security panel is separate from the optimization ring, and a
+      machine with findings does not show a high optimization score as reassurance.
