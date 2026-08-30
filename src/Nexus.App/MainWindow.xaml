@@ -693,6 +693,43 @@
                         </StackPanel>
                     </GroupBox>
 
+                    <GroupBox Header="Scan history">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="What has actually been checked, and when. An empty findings list means nothing was found; it does not mean anything was looked at."/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="Save report…" Margin="0,0,8,0"
+                                        ToolTip="Writes the whole history to a text file you can paste somewhere when asking for help."
+                                        Command="{Binding SaveReportCommand}"/>
+                                <Button Content="Clear history" Command="{Binding ClearHistoryCommand}"/>
+                            </StackPanel>
+
+                            <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,6"
+                                       Text="Nothing has been scanned yet."
+                                       Visibility="{Binding NothingScannedYet, Converter={StaticResource BoolToVisibility}}"/>
+
+                            <ItemsControl ItemsSource="{Binding History}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#3A4256" BorderThickness="0,0,0,1" Padding="0,6">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Duration}"
+                                                           Style="{StaticResource DimText}" Margin="8,0,0,0"/>
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding When}"
+                                                           Style="{StaticResource DimText}" Width="110"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding Outcome}" Style="{StaticResource DimText}"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Files Nexus skips">
                         <StackPanel>
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"

@@ -24,6 +24,7 @@ public sealed class NexusPaths
     // ---- Sentinel (security module) ----
     public string SecurityDirectory => Path.Combine(Root, "security");
     public string SecurityTrustFile => Path.Combine(SecurityDirectory, "trusted.json");
+    public string SecurityHistoryFile => Path.Combine(SecurityDirectory, "scan-history.json");
     public string QuarantineJournalFile => Path.Combine(SecurityDirectory, "quarantine.json");
 
     /// <summary>Where quarantined file copies are held. Kept out of the logs and

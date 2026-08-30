@@ -71,6 +71,7 @@ public sealed class SecurityViewModel : ViewModelBase
     private readonly ScheduledScanService _scheduledScan;
     private readonly KnownGoodBaselineService _baseline;
     private readonly HashFeedImportService _feeds;
+    private readonly ScanHistory _history;
 
     private CancellationTokenSource? _scanCancellation;
     private string _defenderStatus = "Checking Microsoft Defender…";
@@ -83,6 +84,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public ObservableCollection<ProtectionComponent> Protection { get; } = [];
     public ObservableCollection<ConnectionInfo> Connections { get; } = [];
     public ObservableCollection<ExclusionRow> Exclusions { get; } = [];
+    public ObservableCollection<ScanRun> History { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -91,7 +93,8 @@ public sealed class SecurityViewModel : ViewModelBase
         TrustStore trust,
         ScheduledScanService scheduledScan,
         KnownGoodBaselineService baseline,
-        HashFeedImportService feeds)
+        HashFeedImportService feeds,
+        ScanHistory history)
     {
         _sentinel = sentinel;
         _quarantine = quarantine;
@@ -100,6 +103,7 @@ public sealed class SecurityViewModel : ViewModelBase
         _scheduledScan = scheduledScan;
         _baseline = baseline;
         _feeds = feeds;
+        _history = history;
 
         _sentinel.AlertsChanged += RefreshFindings;
         _sentinel.ProtectionStateChanged += RefreshProtectionState;
@@ -127,6 +131,8 @@ public sealed class SecurityViewModel : ViewModelBase
         BrowseExclusionCommand = new RelayCommand(BrowseForExclusion);
         AuditSystemSettingsCommand = new RelayCommand(AuditSystemSettings);
         FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
+        SaveReportCommand = new RelayCommand(SaveReport);
+        ClearHistoryCommand = new RelayCommand(() => { _history.Clear(); RefreshHistory(); });
 
         RefreshDefenderStatus();
 
@@ -141,6 +147,7 @@ public sealed class SecurityViewModel : ViewModelBase
         RefreshTrusted();
         RefreshProtection();
         RefreshExclusions();
+        RefreshHistory();
     }
 
     public string Status
@@ -179,6 +186,8 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand BrowseExclusionCommand { get; }
     public RelayCommand AuditSystemSettingsCommand { get; }
     public RelayCommand FullScanCommand { get; }
+    public RelayCommand SaveReportCommand { get; }
+    public RelayCommand ClearHistoryCommand { get; }
 
     // ---- The big switch ----
     //
@@ -350,6 +359,7 @@ public sealed class SecurityViewModel : ViewModelBase
         _scanCancellation = new CancellationTokenSource();
 
         var started = DateTimeOffset.Now;
+        bool completed = true;
         int scanned = 0;
         int notable = 0;
 
@@ -382,6 +392,7 @@ public sealed class SecurityViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
+            completed = false;
             Status = $"Full scan stopped after {scanned:N0} files. Nothing was changed.";
         }
         finally
@@ -390,6 +401,9 @@ public sealed class SecurityViewModel : ViewModelBase
             _scanCancellation?.Dispose();
             _scanCancellation = null;
             RefreshFindings();
+
+            Record(ScanKind.FullDisk, string.Join(", ", SentinelService.FixedDriveRoots()),
+                started, scanned, notable, completed);
         }
     }
 
@@ -425,12 +439,19 @@ public sealed class SecurityViewModel : ViewModelBase
         IsScanning = true;
         _scanCancellation = new CancellationTokenSource();
 
+        var started = DateTimeOffset.Now;
+        bool completed = true;
+        int findings = 0;
+
         try
         {
             Status = $"Looking at {Path.GetFileName(path)}…";
 
             var verdict = await _sentinel.ScanFileAsync(path, _scanCancellation.Token)
                 .ConfigureAwait(false);
+
+            if (verdict.WarrantsAlert)
+                findings = 1;
 
             Status = verdict.WarrantsAlert
                 ? $"{Path.GetFileName(path)}: {verdict.Level} at {verdict.Score}/100. The reasons are " +
@@ -440,10 +461,12 @@ public sealed class SecurityViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
+            completed = false;
             Status = "Stopped. Nothing was changed.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            completed = false;
             Status = $"Could not read {Path.GetFileName(path)}: {ex.Message}";
         }
         finally
@@ -452,6 +475,8 @@ public sealed class SecurityViewModel : ViewModelBase
             _scanCancellation?.Dispose();
             _scanCancellation = null;
             RefreshFindings();
+
+            Record(ScanKind.SingleFile, path, started, filesScanned: 1, findings, completed);
         }
     }
 
@@ -554,6 +579,73 @@ public sealed class SecurityViewModel : ViewModelBase
         });
     }
 
+    // ---- Scan history ----
+
+    /// <summary>True when nothing has been scanned yet, so the tab can say so rather
+    /// than showing an empty box that could equally mean "nothing was found".</summary>
+    public bool NothingScannedYet => History.Count == 0;
+
+    public void RefreshHistory()
+    {
+        var runs = _history.All;
+
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            History.Clear();
+
+            // The last 20. The rest stay on disk and go into the report.
+            foreach (var run in runs.Take(20))
+                History.Add(run);
+
+            OnPropertyChanged(nameof(NothingScannedYet));
+        });
+    }
+
+    private void Record(ScanKind kind, string target, DateTimeOffset started,
+        int filesScanned, int findings, bool completed)
+    {
+        _history.Record(new ScanRun
+        {
+            StartedAt = started,
+            Kind = kind,
+            Target = target,
+            FilesScanned = filesScanned,
+            Findings = findings,
+            DurationSeconds = (DateTimeOffset.Now - started).TotalSeconds,
+            Completed = completed,
+        });
+
+        RefreshHistory();
+    }
+
+    /// <summary>
+    /// Write the history out as plain text. Plain text because the thing people
+    /// actually do with a scan report is paste it somewhere while asking for help.
+    /// </summary>
+    private void SaveReport()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save the scan report",
+            FileName = $"nexus-scan-report-{DateTimeOffset.Now:yyyy-MM-dd}.txt",
+            DefaultExt = ".txt",
+            Filter = "Text file (*.txt)|*.txt|All files (*.*)|*.*",
+        };
+
+        if (dialog.ShowDialog() != true)
+            return;
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, _history.BuildReport(DateTimeOffset.Now));
+            Status = $"Report saved to {dialog.FileName}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"Could not save the report: {ex.Message}";
+        }
+    }
+
     // ---- System settings ----
 
     /// <summary>
@@ -600,6 +692,9 @@ public sealed class SecurityViewModel : ViewModelBase
     private async Task QuickScanAsync()
     {
         IsScanning = true;
+        var started = DateTimeOffset.Now;
+        int before = _sentinel.Alerts.Count;
+
         try
         {
             Status = "Checking your download, temp and startup folders…";
@@ -610,6 +705,13 @@ public sealed class SecurityViewModel : ViewModelBase
         {
             IsScanning = false;
             RefreshFindings();
+
+            // The scheduled scan does not report a file count, so this records what
+            // can honestly be known: how long it took and what it raised. Claiming a
+            // file count that was never measured would make the history fiction.
+            Record(ScanKind.QuickCheck, "downloads, temp and startup",
+                started, filesScanned: 0, findings: Math.Max(0, _sentinel.Alerts.Count - before),
+                completed: true);
         }
     }
 
@@ -669,6 +771,8 @@ public sealed class SecurityViewModel : ViewModelBase
         IsScanning = true;
         _scanCancellation = new CancellationTokenSource();
 
+        var started = DateTimeOffset.Now;
+        bool completed = true;
         int scanned = 0;
         int notable = 0;
 
@@ -693,6 +797,7 @@ public sealed class SecurityViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
+            completed = false;
             Status = $"Stopped after {scanned} files. Nothing was changed.";
         }
         finally
@@ -701,6 +806,8 @@ public sealed class SecurityViewModel : ViewModelBase
             _scanCancellation?.Dispose();
             _scanCancellation = null;
             RefreshFindings();
+
+            Record(ScanKind.Folder, folder, started, scanned, notable, completed);
         }
     }
 

@@ -199,6 +199,7 @@ public partial class App : System.Windows.Application
         var behaviourWatcher = new ProcessDetailWatcher(log, behaviorEngine);
         var trustStore = new TrustStore(paths);
         var shellMenu = new ShellIntegrationService(log, Environment.ProcessPath ?? "");
+        var scanHistory = new ScanHistory(paths);
         var quarantineJournal = new QuarantineJournal(paths);
         var quarantine = new QuarantineService(quarantineJournal, paths, log);
         var verdictCache = new VerdictCache(paths, SentinelRulesVersion);
@@ -211,7 +212,7 @@ public partial class App : System.Windows.Application
             log, fileIdentity, signatures, reputation, scannerHost,
             autoruns, behaviourWatcher, trustStore, verdictCache,
             ransomwareGuard, massChange, defenderHealth, networkMonitor, systemIntegrity, settings,
-            baselineBuilder, hashFeeds, () => gameMode.IsActive);
+            baselineBuilder, hashFeeds, scanHistory, () => gameMode.IsActive);
 
         var tweakState = new TweakStateStore(paths);
         var registryApplier = new RegistryTweakApplier();
@@ -271,7 +272,7 @@ public partial class App : System.Windows.Application
             Tools = new ToolsViewModel(standby, dns, settings),
             Security = new SecurityViewModel(
                 sentinel, quarantine, quarantineJournal, trustStore, scheduledScan,
-                baselineBuilder, hashFeeds),
+                baselineBuilder, hashFeeds, scanHistory),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic, benchmark, baselines),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake, shellMenu),

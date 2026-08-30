@@ -20,6 +20,7 @@ namespace Nexus.Core.Persistence;
 [JsonSerializable(typeof(QuarantineState))]
 [JsonSerializable(typeof(VerdictCacheState))]
 [JsonSerializable(typeof(BaselineState))]
+[JsonSerializable(typeof(ScanHistoryState))]
 public sealed partial class NexusJsonContext : JsonSerializerContext
 {
 }

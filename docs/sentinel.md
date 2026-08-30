@@ -163,6 +163,50 @@ count, total expansion, per-entry size, and compression ratio are all capped, pa
 traversal entries are flagged, nothing is written to disk, and nested archives are
 reported rather than opened. Findings are rewritten to name the entry they came from.
 
+## Scan modes
+
+| Mode | Covers | Triggered by |
+|---|---|---|
+| Quick check | Downloads, temp, startup folders | Button, and every few hours |
+| Scan folder | One folder, recursively | Button, or right-click a folder |
+| Scan one file | One file | Right-click a file |
+| Full scan | Every fixed drive | Button |
+| USB check | A removable drive, capped at 20,000 files | The drive being plugged in |
+| Startup items | Run keys, services, scheduled tasks | Button |
+| Network settings | Hosts file, proxy, DNS | Button |
+
+Removable and network drives are left out of the full scan deliberately. A full scan
+that silently pulls a terabyte across a VPN is not a feature, and a USB drive is
+better looked at when it is plugged in — which is the moment before something on it
+gets double-clicked.
+
+The USB watch polls rather than subscribing to `WM_DEVICECHANGE`. That message needs
+a window handle, and Nexus can be running with only a tray icon, so the tidier
+approach would stop working exactly when the window is closed.
+
+## Signatures, including the ones Windows keeps elsewhere
+
+Most of Windows carries no signature inside the file. System binaries are signed in
+bulk through catalog (`.cat`) files, and asking `WinVerifyTrust` about the file alone
+answers "no signature" for `notepad.exe`, `svchost.exe` and `kernel32.dll` alike.
+
+Nexus checks the catalogs when a file has no embedded signature of its own. Without
+that step the strongest exoneration in the module — a valid Microsoft signature —
+never fired for the operating system, and every scan of a Windows folder reported
+thousands of files as unsigned. A scan of System32 (5,452 files) now produces no
+findings at all.
+
+## Scan history
+
+Every scan is recorded: when, what, how many files, how many findings, and whether it
+finished or was stopped. The last hundred are kept, and the whole thing exports as
+plain text — plain text because what people actually do with a scan report is paste it
+somewhere while asking for help.
+
+This exists because an empty findings list is ambiguous. "500,000 files, nothing
+flagged" and "nothing has run in three weeks" look identical from the findings list
+alone, and only one of them is reassuring.
+
 ## When scanning happens
 
 Four triggers, in rough order of how much they matter:

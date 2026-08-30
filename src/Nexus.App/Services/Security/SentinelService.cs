@@ -53,6 +53,7 @@ public sealed class SentinelService : IDisposable
     private readonly HashFeedImportService _feeds;
     private readonly DownloadWatcherService _downloads;
     private readonly RemovableDriveWatcherService _removableDrives;
+    private readonly ScanHistory _history;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
     public const int MaxAlerts = 500;
@@ -83,6 +84,7 @@ public sealed class SentinelService : IDisposable
         SettingsService settings,
         KnownGoodBaselineService baseline,
         HashFeedImportService feeds,
+        ScanHistory history,
         Func<bool> isGameModeActive)
     {
         _log = log;
@@ -104,6 +106,7 @@ public sealed class SentinelService : IDisposable
         _feeds = feeds;
         _downloads = new DownloadWatcherService(log, ScanDownloadAsync, isGameModeActive);
         _removableDrives = new RemovableDriveWatcherService(log, ScanDriveAsync);
+        _history = history;
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -450,8 +453,10 @@ public sealed class SentinelService : IDisposable
     /// <returns>How many files were worth reporting.</returns>
     public async Task<int> ScanDriveAsync(string root, int maxFiles, CancellationToken cancellationToken = default)
     {
+        var started = DateTimeOffset.Now;
         int scanned = 0;
         int notable = 0;
+        bool completed = true;
 
         await foreach (var verdict in ScanFolderAsync(root, recursive: true, cancellationToken)
                            .ConfigureAwait(false))
@@ -467,9 +472,22 @@ public sealed class SentinelService : IDisposable
                     $"Stopped after {maxFiles:N0} files on {root}. There is more on the drive than " +
                     "an automatic check should read without being asked — use Scan folder to go " +
                     "through the rest.");
+
+                completed = false;
                 break;
             }
         }
+
+        _history.Record(new ScanRun
+        {
+            StartedAt = started,
+            Kind = ScanKind.RemovableDrive,
+            Target = root,
+            FilesScanned = scanned,
+            Findings = notable,
+            DurationSeconds = (DateTimeOffset.Now - started).TotalSeconds,
+            Completed = completed,
+        });
 
         return notable;
     }
