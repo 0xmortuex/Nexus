@@ -140,9 +140,15 @@ public sealed class QuarantineService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _journal.MarkFailed(entry.Id, ex.Message);
-            _log.Warn("Sentinel", $"Could not restore {entry.OriginalPath}: {ex.Message}");
-            return new QuarantineResult(false, $"Could not restore the file: {ex.Message}");
+            // Back to Held, not Failed: the file is still sitting in quarantine, and
+            // marking it Failed would remove it from the list it can be restored from.
+            _journal.MarkRestoreFailed(entry.Id, ex.Message);
+            _log.Warn("Sentinel",
+                $"Could not restore {entry.OriginalPath}: {ex.Message}. It is still in quarantine and " +
+                "can be restored again once the problem is fixed.");
+
+            return new QuarantineResult(false,
+                $"Could not restore the file: {ex.Message}. It is still in quarantine — nothing was lost.");
         }
     }
 

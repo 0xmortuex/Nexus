@@ -140,6 +140,27 @@ public sealed class QuarantineJournal
     public void MarkHeld(string id) => Transition(id, QuarantineStatus.Held);
     public void MarkRestored(string id) => Transition(id, QuarantineStatus.Restored);
 
+    /// <summary>
+    /// A restore was attempted and did not happen, so the file is still in
+    /// quarantine.
+    ///
+    /// This is deliberately NOT <see cref="MarkFailed"/>. Failed means "the move
+    /// never happened and the file is where it always was", which is true for a
+    /// failed quarantine and false for a failed restore — there the file really is
+    /// in the quarantine folder. Marking it Failed drops it out of
+    /// <see cref="Held"/>, so it vanishes from the list the user restores from and
+    /// sits in quarantine forever under a meaningless name with no way to ask for it
+    /// back. It goes back to Held, carrying the reason it did not work.
+    /// </summary>
+    public void MarkRestoreFailed(string id, string error)
+    {
+        var entry = Find(id);
+        if (entry is null)
+            return;
+
+        Upsert(entry with { Status = QuarantineStatus.Held, Error = error });
+    }
+
     public void MarkFailed(string id, string error)
     {
         var entry = Find(id);

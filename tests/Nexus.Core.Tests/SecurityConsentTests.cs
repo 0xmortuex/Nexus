@@ -214,6 +214,64 @@ public class SecurityConsentTests : IDisposable
         Assert.Empty(journal.Held());
     }
 
+    /// <summary>
+    /// A restore that fails must leave the entry restorable. The file really is in
+    /// quarantine at that point, and dropping it out of Held would strand it there
+    /// under a meaningless name with no way for the user to ask for it back.
+    /// </summary>
+    [Fact]
+    public void A_failed_restore_leaves_the_entry_still_held()
+    {
+        var journal = NewJournal("failed-restore.json");
+        var entry = journal.BeginQuarantine(
+            MaliciousVerdict(Target), _dir,
+            UserConsent.FromUserGesture("quarantine", Target.IdentityKey, Now), Now)!;
+
+        journal.MarkHeld(entry.Id);
+        journal.BeginRestore(entry.Id);
+        journal.MarkRestoreFailed(entry.Id, "the destination folder is read-only");
+
+        var held = Assert.Single(journal.Held());
+        Assert.Equal(entry.Id, held.Id);
+        Assert.Equal("the destination folder is read-only", held.Error);
+
+        // And it must be possible to try again.
+        Assert.NotNull(journal.BeginRestore(entry.Id));
+    }
+
+    /// <summary>A failed restore is not the same as a failed quarantine: one leaves
+    /// the file in quarantine, the other leaves it where it always was.</summary>
+    [Fact]
+    public void A_failed_quarantine_and_a_failed_restore_are_recorded_differently()
+    {
+        var journal = NewJournal("failure-modes.json");
+
+        var failedQuarantine = journal.BeginQuarantine(
+            MaliciousVerdict(Target), _dir,
+            UserConsent.FromUserGesture("quarantine", Target.IdentityKey, Now), Now)!;
+        journal.MarkFailed(failedQuarantine.Id, "locked");
+
+        var failedRestore = journal.BeginQuarantine(
+            MaliciousVerdict(OtherTarget), _dir,
+            UserConsent.FromUserGesture("quarantine", OtherTarget.IdentityKey, Now), Now)!;
+        journal.MarkHeld(failedRestore.Id);
+        journal.MarkRestoreFailed(failedRestore.Id, "read-only");
+
+        // The one that never moved is not held; the one still in quarantine is.
+        var held = Assert.Single(journal.Held());
+        Assert.Equal(failedRestore.Id, held.Id);
+        Assert.Equal(QuarantineStatus.Failed, journal.Find(failedQuarantine.Id)!.Status);
+    }
+
+    [Fact]
+    public void Marking_a_restore_failed_on_an_unknown_entry_is_harmless()
+    {
+        var journal = NewJournal("unknown-entry.json");
+        journal.MarkRestoreFailed("no-such-id", "whatever");
+
+        Assert.Empty(journal.All());
+    }
+
     [Fact]
     public void Only_held_entries_can_be_restored()
     {
