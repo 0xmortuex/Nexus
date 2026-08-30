@@ -156,9 +156,24 @@ build tooling does the same thing constantly. That is a genuine gap, accepted
 knowingly. The alternative — a thousand findings a developer learns to dismiss — is
 not a safer tool, only a louder one.
 
-`ArchiveStaticEngine` looks inside ZIPs, because that is how most malware arrives and
-a scanner that stops at the container reports "unknown" on the files it most needs an
-opinion about. Every limit exists because the archive is attacker-controlled: entry
+`ArchiveStaticEngine` looks inside ZIP, 7z, RAR, tar, gzip, bzip2 and xz, because that
+is how most malware arrives and a scanner that stops at the container reports
+"unknown" on the files it most needs an opinion about. Malware moved off ZIP for
+exactly that reason.
+
+Format is decided by magic bytes, never by extension — a file named `.txt` is still a
+7z archive if it starts like one. Two readers are needed: 7z and RAR want random
+access to their central directory, while a `.tar.gz` is a compressed stream wrapping
+another archive and only the forward-only reader will take it. Both feed the same
+limit checks, so the entry cap, expansion cap, traversal check and zip-bomb ratio
+apply identically to every format. The limits are not reimplemented per format; that
+is how one copy quietly ends up missing a check.
+
+A password-protected archive is reported as password-protected, not as corrupt. The
+difference matters: encrypting an attachment so the scanner cannot read it, and
+putting the password in the message beside it, is the oldest working delivery method
+there is. Nexus says it could not look inside, which is not the same as saying there
+is nothing there. Every limit exists because the archive is attacker-controlled: entry
 count, total expansion, per-entry size, and compression ratio are all capped, path
 traversal entries are flagged, nothing is written to disk, and nested archives are
 reported rather than opened. Findings are rewritten to name the entry they came from.

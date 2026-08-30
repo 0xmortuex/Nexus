@@ -222,4 +222,138 @@ public class ArchiveInspectorTests
         using var zip = BuildZip(("folder/", []));
         Assert.Empty(Codes(zip, EchoAnalyser));
     }
+
+    // ---- Format detection ----
+    //
+    // By magic bytes, never by extension. A file named .txt is still a 7z archive if
+    // it starts like one, and malware delivered in archives depends on the extension
+    // being believed.
+
+    [Fact]
+    public void A_zip_is_recognised()
+    {
+        Assert.Equal(ArchiveInspector.ArchiveFormat.Zip,
+            ArchiveInspector.DetectFormat([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]));
+    }
+
+    [Fact]
+    public void A_seven_zip_archive_is_recognised()
+    {
+        Assert.Equal(ArchiveInspector.ArchiveFormat.SevenZip,
+            ArchiveInspector.DetectFormat([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0, 0]));
+    }
+
+    [Fact]
+    public void A_rar_archive_is_recognised()
+    {
+        // RAR4 and RAR5 differ only after the sixth byte.
+        Assert.Equal(ArchiveInspector.ArchiveFormat.Rar,
+            ArchiveInspector.DetectFormat([0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00]));
+
+        Assert.Equal(ArchiveInspector.ArchiveFormat.Rar,
+            ArchiveInspector.DetectFormat([0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]));
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x1F, 0x8B, 0x08 }, ArchiveInspector.ArchiveFormat.GZip)]
+    [InlineData(new byte[] { 0x42, 0x5A, 0x68, 0x39 }, ArchiveInspector.ArchiveFormat.BZip2)]
+    [InlineData(new byte[] { 0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00 }, ArchiveInspector.ArchiveFormat.Xz)]
+    public void The_single_file_compressors_are_recognised(byte[] header, ArchiveInspector.ArchiveFormat expected)
+    {
+        Assert.Equal(expected, ArchiveInspector.DetectFormat(header));
+    }
+
+    /// <summary>TAR has no leading magic at all; the marker sits 257 bytes in.</summary>
+    [Fact]
+    public void A_tar_is_recognised_by_its_offset_marker()
+    {
+        var tar = new byte[512];
+        "ustar"u8.CopyTo(tar.AsSpan(257));
+
+        Assert.Equal(ArchiveInspector.ArchiveFormat.Tar, ArchiveInspector.DetectFormat(tar));
+    }
+
+    [Fact]
+    public void Ordinary_files_are_not_mistaken_for_archives()
+    {
+        Assert.Equal(ArchiveInspector.ArchiveFormat.None, ArchiveInspector.DetectFormat([]));
+        Assert.Equal(ArchiveInspector.ArchiveFormat.None, ArchiveInspector.DetectFormat("hello there"u8));
+        Assert.Equal(ArchiveInspector.ArchiveFormat.None, ArchiveInspector.DetectFormat(new byte[4096]));
+
+        // An MZ executable is not an archive, however much of one it embeds.
+        Assert.Equal(ArchiveInspector.ArchiveFormat.None, ArchiveInspector.DetectFormat([0x4D, 0x5A, 0x90, 0x00]));
+    }
+
+    [Fact]
+    public void Detection_never_reads_past_a_short_buffer()
+    {
+        // Every prefix of every magic number must be refused without throwing.
+        byte[][] headers =
+        [
+            [0x50, 0x4B, 0x03, 0x04],
+            [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C],
+            [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07],
+            [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00],
+        ];
+
+        foreach (var header in headers)
+            for (int length = 0; length <= header.Length; length++)
+                ArchiveInspector.DetectFormat(header.AsSpan(0, length));
+    }
+
+    // ---- The shared limits apply to every format ----
+
+    private static ArchiveInspector.ArchiveEntryView Entry(
+        string name, long uncompressed, long compressed, byte[]? content = null) =>
+        new(name, uncompressed, compressed, _ => content ?? new byte[Math.Min(uncompressed, 64)]);
+
+    [Fact]
+    public void A_traversal_entry_is_caught_whatever_produced_it()
+    {
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry(@"..\..\Windows\System32\evil.dll", 100, 50)],
+            static (_, _) => []);
+
+        Assert.Contains(signals, s => s.Code == "archive-path-traversal");
+    }
+
+    [Fact]
+    public void The_expansion_ratio_is_checked_whatever_produced_it()
+    {
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry("bomb.bin", 1_000_000_000, 1_000)],
+            static (_, _) => []);
+
+        Assert.Contains(signals, s => s.Code == "archive-zip-bomb");
+    }
+
+    /// <summary>
+    /// The entry cap must hold for a forward-only reader too, and a partial look must
+    /// never read as a clean bill of health.
+    /// </summary>
+    [Fact]
+    public void Stopping_early_is_reported_rather_than_hidden()
+    {
+        var many = Enumerable.Range(0, ArchiveInspector.MaxEntries + 50)
+            .Select(i => Entry($"file{i}.txt", 64, 32));
+
+        var signals = ArchiveInspector.InspectEntries(many, static (_, _) => []);
+
+        Assert.Contains(signals, s => s.Code == "archive-not-fully-examined");
+    }
+
+    [Fact]
+    public void An_entry_that_will_not_decompress_does_not_lose_the_rest()
+    {
+        var entries = new[]
+        {
+            new ArchiveInspector.ArchiveEntryView("locked.bin", 100, 50, _ => []),
+            Entry("readable.txt", 100, 50, "content"u8.ToArray()),
+        };
+
+        var seen = new List<string>();
+        ArchiveInspector.InspectEntries(entries, (_, name) => { seen.Add(name); return []; });
+
+        Assert.Equal(["readable.txt"], seen);
+    }
 }

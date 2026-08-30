@@ -1,8 +1,27 @@
 # Third-party components
 
-Nexus itself is MIT (see [LICENSE](LICENSE)). Nothing third-party is vendored into
-this repository — everything below is optional, downloaded by you, and listed here so
-the licence position is clear before you add it.
+Nexus itself is MIT (see [LICENSE](LICENSE)). No third-party binary is vendored into
+this repository. One package is restored from NuGet at build time and is listed first;
+everything after it is optional, downloaded by you, and listed so the licence position
+is clear before you add it.
+
+## Build dependencies
+
+### SharpCompress — MIT
+
+<https://github.com/adamhathcock/sharpcompress>
+
+Reads 7z, RAR, tar, gzip, bzip2 and xz archives inside `Nexus.Scanner`. Malware moved
+into these formats precisely because scanners that only understood ZIP reported
+"unknown" and got out of the way.
+
+It is a managed, dependency-free implementation, which is why it was chosen over
+shelling out to 7-Zip: a scanner that spawns an external unpacker on an
+attacker-controlled file has handed the attacker a process. It runs only in the
+scanner worker, never in the elevated host — a parser bug in it costs a crashed
+helper process rather than the machine.
+
+MIT, the same licence as Nexus, so it adds no obligation beyond attribution.
 
 ## Optional native components
 

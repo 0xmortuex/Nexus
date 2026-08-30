@@ -33,6 +33,74 @@ public static class ArchiveInspector
     /// <summary>Analyses one entry's bytes; the caller supplies the real engines.</summary>
     public delegate IReadOnlyList<SecuritySignal> EntryAnalyser(byte[] content, string entryName);
 
+    /// <summary>
+    /// One entry, as the limit checks need to see it.
+    ///
+    /// This exists so every archive format goes through the same rules. The limits
+    /// above are security controls against an attacker-controlled file, and keeping a
+    /// second copy of them for 7z and a third for RAR is how one copy quietly ends up
+    /// missing a check.
+    /// </summary>
+    /// <param name="Read">Reads at most the given number of bytes. Returns empty when
+    /// the entry cannot be decompressed — encrypted entries land here.</param>
+    public sealed record ArchiveEntryView(
+        string Name,
+        long UncompressedLength,
+        long CompressedLength,
+        Func<long, byte[]> Read);
+
+    /// <summary>Archive formats Nexus recognises from the bytes themselves.</summary>
+    public enum ArchiveFormat
+    {
+        None,
+        Zip,
+        SevenZip,
+        Rar,
+        GZip,
+        BZip2,
+        Xz,
+        Tar,
+    }
+
+    /// <summary>
+    /// Identify an archive by its magic bytes rather than its extension. A file named
+    /// .txt is still a 7z archive if it starts like one, and malware delivered in
+    /// archives depends on the extension being believed.
+    /// </summary>
+    public static ArchiveFormat DetectFormat(ReadOnlySpan<byte> bytes)
+    {
+        if (LooksLikeZip(bytes))
+            return ArchiveFormat.Zip;
+
+        if (StartsWith(bytes, [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]))
+            return ArchiveFormat.SevenZip;
+
+        if (StartsWith(bytes, [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07]))
+            return ArchiveFormat.Rar;
+
+        if (StartsWith(bytes, [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]))
+            return ArchiveFormat.Xz;
+
+        if (StartsWith(bytes, [0x1F, 0x8B]))
+            return ArchiveFormat.GZip;
+
+        if (StartsWith(bytes, [0x42, 0x5A, 0x68]))
+            return ArchiveFormat.BZip2;
+
+        // TAR has no leading magic; the marker sits 257 bytes in.
+        if (bytes.Length >= 262
+            && bytes[257] == (byte)'u' && bytes[258] == (byte)'s' && bytes[259] == (byte)'t'
+            && bytes[260] == (byte)'a' && bytes[261] == (byte)'r')
+        {
+            return ArchiveFormat.Tar;
+        }
+
+        return ArchiveFormat.None;
+    }
+
+    private static bool StartsWith(ReadOnlySpan<byte> bytes, ReadOnlySpan<byte> magic) =>
+        bytes.Length >= magic.Length && bytes[..magic.Length].SequenceEqual(magic);
+
     public static bool LooksLikeZip(ReadOnlySpan<byte> bytes) =>
         bytes.Length >= 4
         && bytes[0] == 0x50 && bytes[1] == 0x4B
@@ -56,7 +124,18 @@ public static class ArchiveInspector
         }
     }
 
-    private static IReadOnlyList<SecuritySignal> InspectEntries(ZipArchive archive, EntryAnalyser analyseEntry)
+    private static IReadOnlyList<SecuritySignal> InspectEntries(ZipArchive archive, EntryAnalyser analyseEntry) =>
+        InspectEntries(
+            archive.Entries.Select(e => new ArchiveEntryView(
+                e.FullName, e.Length, e.CompressedLength, limit => ReadEntry(e, limit))),
+            analyseEntry);
+
+    /// <summary>
+    /// Apply every limit and rule to a sequence of entries, whatever produced them.
+    /// This is the single place the archive rules live.
+    /// </summary>
+    public static IReadOnlyList<SecuritySignal> InspectEntries(
+        IEnumerable<ArchiveEntryView> entries, EntryAnalyser analyseEntry)
     {
         var signals = new List<SecuritySignal>();
         long totalRead = 0;
@@ -64,7 +143,7 @@ public static class ArchiveInspector
         var executableNames = new List<string>();
         bool truncated = false;
 
-        foreach (var entry in archive.Entries)
+        foreach (var entry in entries)
         {
             if (examined >= MaxEntries || totalRead >= MaxTotalUncompressedBytes)
             {
@@ -72,14 +151,14 @@ public static class ArchiveInspector
                 break;
             }
 
-            if (entry.Length == 0)
+            if (entry.UncompressedLength == 0)
                 continue;
 
-            if (HasTraversalPath(entry.FullName))
+            if (HasTraversalPath(entry.Name))
             {
                 signals.Add(new SecuritySignal(
                     SignalSource.StaticRules, SignalWeight.Strong, "archive-path-traversal",
-                    $"An entry in this archive ({entry.FullName}) is named so that extracting it would " +
+                    $"An entry in this archive ({entry.Name}) is named so that extracting it would " +
                     "write outside the folder you extract into. Archive tools do not do this by accident."));
                 continue;
             }
@@ -88,32 +167,33 @@ public static class ArchiveInspector
             {
                 signals.Add(new SecuritySignal(
                     SignalSource.StaticRules, SignalWeight.Moderate, "archive-zip-bomb",
-                    $"An entry in this archive expands {entry.Length / Math.Max(1, entry.CompressedLength)}× " +
+                    "An entry in this archive expands " +
+                    $"{entry.UncompressedLength / Math.Max(1, entry.CompressedLength)}× " +
                     "its stored size. That pattern is used to exhaust disk or memory."));
                 continue;
             }
 
-            if (IsNestedArchive(entry.FullName))
+            if (IsNestedArchive(entry.Name))
             {
                 signals.Add(new SecuritySignal(
                     SignalSource.StaticRules, SignalWeight.Weak, "archive-nested",
-                    $"This archive contains another archive ({entry.FullName}). Nexus does not open " +
+                    $"This archive contains another archive ({entry.Name}). Nexus does not open " +
                     "archives inside archives, so its contents were not examined."));
                 continue;
             }
 
-            var content = ReadEntry(entry, MaxEntryBytes);
+            var content = entry.Read(MaxEntryBytes);
             if (content.Length == 0)
                 continue;
 
             totalRead += content.Length;
             examined++;
 
-            if (IsExecutableName(entry.FullName))
-                executableNames.Add(entry.FullName);
+            if (IsExecutableName(entry.Name))
+                executableNames.Add(entry.Name);
 
-            foreach (var signal in analyseEntry(content, entry.FullName))
-                signals.Add(Requalify(signal, entry.FullName));
+            foreach (var signal in analyseEntry(content, entry.Name))
+                signals.Add(Requalify(signal, entry.Name));
         }
 
         if (executableNames.Count > 0)
@@ -149,9 +229,9 @@ public static class ArchiveInspector
                           char.ToLowerInvariant(signal.Explanation[0]) + signal.Explanation[1..],
         };
 
-    private static bool IsZipBomb(ZipArchiveEntry entry) =>
+    private static bool IsZipBomb(ArchiveEntryView entry) =>
         entry.CompressedLength > 0
-        && entry.Length / entry.CompressedLength > MaxCompressionRatio;
+        && entry.UncompressedLength / entry.CompressedLength > MaxCompressionRatio;
 
     private static byte[] ReadEntry(ZipArchiveEntry entry, long limit)
     {
