@@ -132,6 +132,49 @@ count, total expansion, per-entry size, and compression ratio are all capped, pa
 traversal entries are flagged, nothing is written to disk, and nested archives are
 reported rather than opened. Findings are rewritten to name the entry they came from.
 
+## When scanning happens
+
+Four triggers, in rough order of how much they matter:
+
+1. **On arrival.** New programs and archives landing in Downloads are checked as
+   they appear. This is the one moment a warning changes what happens next —
+   before the thing is double-clicked. Browsers write to a temporary name and
+   rename on completion, so the rename is the event acted on, and the file is
+   retried until the writer lets go of it.
+2. **On a schedule.** Every six hours, the folders where new files actually
+   arrive: Downloads, temp, the startup locations, Desktop. Deliberately not a
+   full-disk scan — that takes hours, finds nothing extra, and gets cancelled.
+   It never starts while Game Mode is active and abandons a scan in progress the
+   moment a game launches.
+3. **On demand.** A folder, or the quick check, from the Security tab.
+4. **Continuously, for behaviour.** Process launches and file activity, which are
+   not scans at all.
+
+Repeat work is skipped through a cache keyed on path, size and last-write time,
+so a rescan does not re-read and re-hash unchanged files. Machine-generated trees
+(`.git`, `node_modules`, `obj`, `WinSxS`) are skipped entirely: enormous, and not
+how anything gets executed.
+
+## What the user can see and undo
+
+A security tool that accumulates state the user cannot inspect is one they end up
+distrusting. So:
+
+- **Protection status** lists each component and whether it is genuinely running,
+  distinguishing "turned off in Settings" from "tried to start and failed". Several
+  of these can fail for ordinary reasons — WMI unavailable, a redirected Documents
+  folder, the worker missing — and a module that looks enabled while silently doing
+  nothing is worse than one honestly switched off.
+- **Trusted files** are listed with a one-click revoke. Trusting something is a
+  lasting decision made in a hurry from a dialog; an allowlist that can only grow
+  is not acceptable in a security tool.
+- **Quarantine** lists every held file with its original path and the reason.
+- **"That was me"** resets the ransomware watch after an expected burst, because
+  the alternative — after one false alarm from a backup restore — is that the user
+  turns the whole feature off.
+- **Restore all defaults** puts quarantined files back, removes the tripwire files,
+  and clears the trust store, verdict cache and saved baselines.
+
 ## Process isolation
 
 All hostile-file parsing runs in `Nexus.Scanner.exe`, a separate process.

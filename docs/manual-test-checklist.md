@@ -7,7 +7,8 @@ items marked **[hybrid]** need a P/E-core CPU (Intel 12th gen+), items marked
 
 ## 0. Install & launch
 - [ ] `dotnet publish src/Nexus.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`
-      produces a single `Nexus.exe`.
+      produces `Nexus.exe`, `Nexus.Scanner.exe` and an `assets/` folder. The publish
+      FAILS rather than shipping without the scanner.
 - [ ] Launching triggers a UAC elevation prompt (manifest requireAdministrator).
 - [ ] Denying elevation → app does not start. Accepting → main window opens, dark theme.
 - [ ] Launching a second instance shows "already running" and exits.
@@ -320,3 +321,41 @@ logic; everything below is the part that talks to the OS.
       Dashboard security panel. Turn it back on afterwards.
 - [ ] The Dashboard security panel is separate from the optimization ring, and a
       machine with findings does not show a high optimization score as reassurance.
+
+## 11. Final surfaces
+
+### Protection status
+- [ ] All five components report On with sensible detail on a healthy machine.
+- [ ] Turn a feature off in Settings, restart -> it reads "Turned off in Settings",
+      NOT "could not start". The two must never look the same.
+- [ ] Rename `Nexus.Scanner.exe`, restart -> "File scanning" reads Off with a reason,
+      and the rest of the module still works.
+- [ ] With no hash lists in `assets/`, "Hash reputation" reads Off and says why.
+
+### Trusted files
+- [ ] Trust a finding -> it appears in the trusted list with the right name and time.
+- [ ] "Stop trusting" removes it, and the file is reported again on the next scan.
+- [ ] Modify a trusted file -> it disappears from the effective allowlist (trust is
+      keyed on content), and it is reported again.
+
+### Ransomware dismissal
+- [ ] Trigger an alert (edit a tripwire), press "That was me", then trigger it again
+      -> a fresh alert appears rather than being swallowed by the cooldown.
+
+### Connections
+- [ ] "Check connections" fills the list, grouped by program, and the count roughly
+      matches `netstat -ano | find "ESTABLISHED"`.
+
+### Scan performance
+- [ ] Scan a folder containing a git repository -> `.git` is skipped and the scan
+      finishes in seconds rather than minutes.
+- [ ] Scan the same folder twice -> the second pass is markedly faster (cache), and
+      still shows the findings rather than going silent.
+
+### Tray
+- [ ] Tray menu shows the security state and opens the Security tab when clicked.
+- [ ] A likely-malicious finding raises one balloon; an Unknown file raises none.
+
+### Wizard
+- [ ] First run reaches the Security step before Apply, and unchecking the ransomware
+      option means no tripwire files are ever written.
