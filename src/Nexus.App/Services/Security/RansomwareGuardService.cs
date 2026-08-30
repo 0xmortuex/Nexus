@@ -338,6 +338,13 @@ public sealed class RansomwareGuardService : IDisposable
             "That happens when a very large number of files change at once.");
     }
 
+    /// <summary>
+    /// Stop watching. The tripwire files stay where they are — deleting them on a
+    /// pause would mean re-writing them into the user's folders on every resume, and
+    /// they are harmless sitting there. Restore Defaults is what removes them.
+    /// </summary>
+    public void Stop() => Dispose();
+
     public void Dispose()
     {
         _running = false;

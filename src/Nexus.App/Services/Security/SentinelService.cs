@@ -121,8 +121,48 @@ public sealed class SentinelService : IDisposable
     /// that cannot start should cost the user its features, never the application —
     /// and the optimizer half has nothing to do with any of this.
     /// </summary>
+    /// <summary>True while protection is actually running.</summary>
+    public bool IsProtectionOn { get; private set; }
+
+    /// <summary>Raised whenever protection is switched on or off, so the UI and the
+    /// tray can follow without polling.</summary>
+    public event Action? ProtectionStateChanged;
+
+    /// <summary>
+    /// Turn protection off without closing Nexus.
+    ///
+    /// Every monitor is genuinely stopped — the WMI subscription is cancelled, the
+    /// filesystem watchers are torn down, the download watcher stops. "Off" has to
+    /// mean off, or the switch is decoration. The optimizer half is untouched: this
+    /// is one half of the product, not the product.
+    /// </summary>
+    public void StopProtection()
+    {
+        if (!IsProtectionOn)
+            return;
+
+        _behaviour.FindingRaised -= OnBehaviourFinding;
+        _ransomware.Detected -= OnRansomwareFinding;
+
+        TryStart("stopping behaviour monitoring", _behaviour.Stop);
+        TryStart("stopping the ransomware watch", _ransomware.Stop);
+        TryStart("stopping download checks", _downloads.Stop);
+
+        IsProtectionOn = false;
+        _log.Warn("Sentinel",
+            "Protection is OFF. Nexus is no longer watching for anything until you turn it back on.");
+
+        ProtectionStateChanged?.Invoke();
+    }
+
+    /// <summary>Turn protection back on, honouring the per-feature switches.</summary>
+    public void StartProtection() => Start();
+
     public void Start()
     {
+        if (IsProtectionOn)
+            return;
+
         var options = _settings.Current.Security;
 
         TryStart("hash reputation", _reputation.Load);
@@ -149,11 +189,15 @@ public sealed class SentinelService : IDisposable
         if (options.CheckDefenderHealth)
             TryStart("the Defender health check", ReportDefenderHealth);
 
+        IsProtectionOn = true;
+
         _log.Info("Sentinel",
             _scanner.IsAvailable
                 ? "Security monitoring is on. Nexus will report what it finds and never act on its own."
                 : "Security monitoring is on, without the file scanner. Signature checks, startup " +
                   "auditing and behaviour monitoring are running.");
+
+        ProtectionStateChanged?.Invoke();
     }
 
     private void TryStart(string what, Action start)

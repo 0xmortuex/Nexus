@@ -181,6 +181,13 @@ public sealed class ProcessDetailWatcher : IDisposable
     private static int ToInt(object? value) =>
         value is null ? 0 : Convert.ToInt32(value);
 
+    /// <summary>
+    /// Tear the subscriptions down so nothing is being watched. Start() builds fresh
+    /// ones, which is what makes the protection switch able to mean "off" rather than
+    /// "still running but ignoring you".
+    /// </summary>
+    public void Stop() => Dispose();
+
     public void Dispose()
     {
         _running = false;

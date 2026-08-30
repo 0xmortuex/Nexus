@@ -19,6 +19,7 @@ public sealed class TrayIconService : IDisposable
     private readonly SettingsService _settings;
     private readonly SentinelService _sentinel;
     private readonly System.Windows.Forms.ToolStripMenuItem _securityItem;
+    private readonly System.Windows.Forms.ToolStripMenuItem _protectionItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _proBalanceItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _performanceItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _gameModeItem;
@@ -74,6 +75,17 @@ public sealed class TrayIconService : IDisposable
         _securityItem = new System.Windows.Forms.ToolStripMenuItem("Security: checking…");
         _securityItem.Click += (_, _) => OpenRequested?.Invoke();
 
+        // Reachable without opening the window, because the moment someone wants to
+        // switch protection off is exactly the moment they do not want to hunt for it.
+        _protectionItem = new System.Windows.Forms.ToolStripMenuItem("Turn protection off");
+        _protectionItem.Click += (_, _) =>
+        {
+            if (_sentinel.IsProtectionOn)
+                _sentinel.StopProtection();
+            else
+                _sentinel.StartProtection();
+        };
+
         var open = new System.Windows.Forms.ToolStripMenuItem("Open Nexus");
         open.Click += (_, _) => OpenRequested?.Invoke();
         var exit = new System.Windows.Forms.ToolStripMenuItem("Exit");
@@ -86,6 +98,7 @@ public sealed class TrayIconService : IDisposable
         menu.Items.Add(_gameModeItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(_securityItem);
+        menu.Items.Add(_protectionItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(exit);
         menu.Opening += (_, _) => RefreshChecks();
@@ -146,11 +159,17 @@ public sealed class TrayIconService : IDisposable
         var findings = _sentinel.Alerts.Count(a => a.Verdict.WarrantsAlert);
         var defender = _sentinel.DefenderStatus;
 
-        _securityItem.Text = defender.Available && defender.RealTimeProtectionEnabled == false
-            ? "Security: Defender is OFF"
-            : findings > 0
-                ? $"Security: {findings} finding(s) to review"
-                : "Security: nothing flagged";
+        _securityItem.Text = !_sentinel.IsProtectionOn
+            ? "Security: protection is OFF"
+            : defender.Available && defender.RealTimeProtectionEnabled == false
+                ? "Security: Defender is OFF"
+                : findings > 0
+                    ? $"Security: {findings} finding(s) to review"
+                    : "Security: nothing flagged";
+
+        _protectionItem.Text = _sentinel.IsProtectionOn
+            ? "Turn protection off"
+            : "Turn protection ON";
     }
 
     public void Dispose()

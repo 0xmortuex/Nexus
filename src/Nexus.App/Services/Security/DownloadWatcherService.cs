@@ -55,7 +55,7 @@ public sealed class DownloadWatcherService : IDisposable
     private readonly Func<bool> _isGameModeActive;
     private readonly List<FileSystemWatcher> _watchers = [];
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
-    private readonly CancellationTokenSource _shutdown = new();
+    private CancellationTokenSource _shutdown = new();
 
     private bool _running;
 
@@ -89,6 +89,14 @@ public sealed class DownloadWatcherService : IDisposable
     {
         if (_running)
             return;
+
+        // A cancelled token source stays cancelled, so a stopped watcher needs a fresh
+        // one or every queued scan would abort the moment it resumed.
+        if (_shutdown.IsCancellationRequested)
+        {
+            _shutdown.Dispose();
+            _shutdown = new CancellationTokenSource();
+        }
 
         foreach (var folder in DefaultFolders())
         {
@@ -217,6 +225,9 @@ public sealed class DownloadWatcherService : IDisposable
         }
     }
 
+    /// <summary>Stop watching; a later Start() renews the cancellation source.</summary>
+    public void Stop() => Dispose();
+
     public void Dispose()
     {
         _running = false;
@@ -245,6 +256,8 @@ public sealed class DownloadWatcherService : IDisposable
         }
 
         _watchers.Clear();
-        _shutdown.Dispose();
+
+        // Deliberately not disposed here: Stop() routes through Dispose(), and a
+        // restart needs the field to still be usable long enough to be replaced.
     }
 }

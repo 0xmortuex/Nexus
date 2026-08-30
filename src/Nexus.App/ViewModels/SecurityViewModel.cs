@@ -89,6 +89,7 @@ public sealed class SecurityViewModel : ViewModelBase
         _feeds = feeds;
 
         _sentinel.AlertsChanged += RefreshFindings;
+        _sentinel.ProtectionStateChanged += RefreshProtectionState;
         _journal.Changed += RefreshQuarantine;
         _trust.Changed += RefreshTrusted;
 
@@ -107,6 +108,7 @@ public sealed class SecurityViewModel : ViewModelBase
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
+        ToggleProtectionCommand = new RelayCommand(ToggleProtection);
 
         RefreshDefenderStatus();
 
@@ -152,6 +154,59 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand QuickScanCommand { get; }
     public RelayCommand RevokeTrustCommand { get; }
     public RelayCommand RefreshProtectionCommand { get; }
+    public RelayCommand ToggleProtectionCommand { get; }
+
+    // ---- The big switch ----
+    //
+    // One control that turns the whole security module on and off, in words rather
+    // than jargon, without needing Settings or a restart. Someone who is unsure what
+    // Nexus is doing to their machine should be able to stop it in one click and see
+    // that it stopped.
+
+    public bool IsProtectionOn => _sentinel.IsProtectionOn;
+
+    public string ProtectionHeadline => _sentinel.IsProtectionOn
+        ? "Protection is ON"
+        : "Protection is OFF";
+
+    public string ProtectionDetail => _sentinel.IsProtectionOn
+        ? "Nexus is watching for suspicious programs, ransomware-shaped file activity and new " +
+          "downloads. It reports what it finds and never blocks or deletes on its own."
+        : "Nexus is not watching anything. Microsoft Defender is unaffected and still protecting " +
+          "you — this switch only controls Nexus.";
+
+    public string ProtectionButtonText => _sentinel.IsProtectionOn
+        ? "Turn protection OFF"
+        : "Turn protection ON";
+
+    private void ToggleProtection()
+    {
+        if (_sentinel.IsProtectionOn)
+        {
+            _sentinel.StopProtection();
+            Status = "Protection is off. Nothing is being watched. Turn it back on whenever you like.";
+        }
+        else
+        {
+            _sentinel.StartProtection();
+            Status = "Protection is on.";
+        }
+
+        RefreshProtection();
+    }
+
+    private void RefreshProtectionState()
+    {
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            OnPropertyChanged(nameof(IsProtectionOn));
+            OnPropertyChanged(nameof(ProtectionHeadline));
+            OnPropertyChanged(nameof(ProtectionDetail));
+            OnPropertyChanged(nameof(ProtectionButtonText));
+        });
+
+        RefreshProtection();
+    }
     public RelayCommand DismissRansomwareAlarmCommand { get; }
     public RelayCommand BuildBaselineCommand { get; }
     public RelayCommand ImportFeedCommand { get; }
