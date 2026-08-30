@@ -69,7 +69,12 @@ dotnet test                 # pure-logic tests, run anywhere
 dotnet publish src/Nexus.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
-The publish output is a single `Nexus.exe`. See `docs/manual-test-checklist.md`
+The publish output is `Nexus.exe` plus `Nexus.Scanner.exe` and an `assets/`
+folder. The scanner is a separate *process* on purpose — it parses hostile files,
+and Nexus runs elevated — so it is a second binary rather than a second assembly.
+Both must sit in the same folder; the publish fails rather than shipping without
+the scanner, because a silently disabled engine reports "unknown" about
+everything it should have caught. See `docs/manual-test-checklist.md`
 for the first-run verification list and `docs/test-notes.md` for what is covered
 by the automated tests versus what needs a live Windows machine.
 
