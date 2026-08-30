@@ -23,6 +23,21 @@ helper process rather than the machine.
 
 MIT, the same licence as Nexus, so it adds no obligation beyond attribution.
 
+### Microsoft.Diagnostics.Tracing.TraceEvent — MIT
+
+<https://github.com/microsoft/perfview>
+
+Runs the ETW session behind behaviour monitoring, in `Nexus.App`. Microsoft's own
+library, and the alternative was several hundred lines of hand-written ETW P/Invoke
+that could not be tested any more thoroughly than this can.
+
+It ships two native helpers, `KernelTraceControl.dll` and `msdia140.dll`, used for
+merging trace files and resolving symbols. Nexus does neither — it starts a real-time
+session and reads process-creation events — so they are along for the ride rather than
+depended on.
+
+MIT, the same licence as Nexus.
+
 ## Optional native components
 
 ### YARA-X — BSD-3-Clause

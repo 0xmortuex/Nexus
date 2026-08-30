@@ -227,6 +227,38 @@ never fired for the operating system, and every scan of a Windows folder reporte
 thousands of files as unsigned. A scan of System32 (5,452 files) now produces no
 findings at all.
 
+## Watching processes start
+
+Behaviour monitoring is fed by an ETW kernel session, and falls back to a WMI watcher
+when ETW cannot start.
+
+The difference is not academic. WMI delivers process-creation events on a one-second
+polling window, so a process that starts and exits inside that window is never seen
+at all — and that is the normal shape of the thing worth catching. A dropper that
+spawns `cmd /c powershell -enc …` and exits lives for milliseconds. ETW delivers the
+event as the kernel creates the process and misses nothing.
+
+Neither can **intercept**. The event arrives as the process starts, not before, so
+this stays a reporting pipeline; blocking an execution needs a kernel driver.
+
+The Security tab names which watcher is running, because "behaviour monitoring: on"
+otherwise means two materially different things and the user cannot tell which they
+have.
+
+ETW needs administrator rights, which Nexus has. It can still fail — policy can
+disable it, another tool can hold the session — and a crash leaves the session behind,
+so a stale one is cleared by name at every start. Without that, one hard kill would
+cost the feature until the machine was rebooted.
+
+**On verification:** the fallback path is tested — unelevated, `TryStart` returns false
+cleanly, nothing throws, and the log explains the downgrade. The ETW path itself could
+not be exercised on the machine this was written on, because starting a kernel session
+requires elevation and the development shell does not have it. What *was* confirmed is
+that the library loads and reaches the real session call from a single-file
+self-contained build, which is the shipping configuration. The manual checklist has a
+step for confirming the rest, and until someone runs it the honest statement is that
+this half is unproven rather than proven.
+
 ## Checking the checks
 
 `tools/Nexus.Sweep` runs this scoring over a real folder and prints what would be

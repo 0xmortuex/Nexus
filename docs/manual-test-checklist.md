@@ -230,6 +230,29 @@ logic; everything below is the part that talks to the OS.
 - [ ] Leave the app idle overnight with monitoring on → no unbounded growth in the
       behaviour engine's process map (capped at 4096).
 
+## 8a. Behaviour monitoring (ETW)
+
+This is the one part of the module that could not be verified during development:
+starting an ETW kernel session needs elevation, and the development shell did not
+have it. Nexus itself runs elevated, so these steps close that gap.
+
+- [ ] With protection on, Security → Protection shows **Behaviour monitoring** as
+      "Watching every process launch, including very short-lived ones (ETW)". If it
+      instead says it is using the WMI watcher, ETW did not start — the Log tab says
+      why, and everything below is expected to fail.
+- [ ] The Log records "Behaviour monitoring is using ETW" at startup.
+- [ ] Run `cmd /c "powershell -nop -w hidden -enc SQBFAFgA"` from a shortcut. It exits
+      in well under a second. A finding appears naming the encoded command line — this
+      is precisely the case the WMI watcher misses.
+- [ ] Turn protection off from the Security tab, then on again. ETW restarts cleanly
+      and the status still reports ETW (a session that failed to release would show
+      the WMI fallback instead).
+- [ ] Kill Nexus from Task Manager, then start it again. It still reports ETW: the
+      stale session left by the kill is cleared by name at startup. Confirm with
+      `logman query -ets` that only one `NexusSentinelProcessWatch` session exists.
+- [ ] Exit Nexus normally and confirm `logman query -ets` no longer lists it. An ETW
+      session outlives the process that made it, so a leak here is a real one.
+
 ## 8b. Scan modes and the things that produce false positives
 
 The point of this section is the *absence* of findings. Every check here was a real

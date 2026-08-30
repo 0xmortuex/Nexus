@@ -116,7 +116,7 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Byte-pattern signatures | ✅ | `PatternEngine`, `assets/patterns.txt` |
 | YARA rules | ⚠️ | `YaraEngine` over YARA-X, implemented and tested. Not bundled: the DLL is ~21 MB and rule sets carry licences. Drop both in and it activates — see docs/sentinel.md |
 | ML / PE classifier | ❌ (won't) | reimplementing EMBER's feature extractor invites a silent train/inference mismatch, and the fusion cap means a single source can never be decisive anyway. See docs/sentinel.md |
-| Behaviour monitoring | ⚠️ | `BehaviorEngine` — masquerading, LOLBins, document-spawned shells, encoded command lines. WMI-polled, so very short-lived processes are missed |
+| Behaviour monitoring | ✅ | `BehaviorEngine` — masquerading, LOLBins, document-spawned shells, encoded command lines. Fed by an ETW kernel session, so a process that starts and exits in milliseconds is still seen; falls back to the WMI watcher (one-second polling) if ETW cannot start |
 | Startup / persistence audit | ✅ | Run keys, startup folders, services, IFEO, Winlogon, AppInit_DLLs, WMI subscriptions, scheduled tasks |
 | Ransomware behaviour detection | ⚠️ | shadow-copy deletion, backup deletion and recovery-disabling are detected and reported — but reported only, after the fact |
 | Script obfuscation analysis | ✅ | `ScriptAnalyzer`: PowerShell/batch/VBScript/JScript/HTA, UTF-16 aware |

@@ -210,7 +210,7 @@ public partial class App : System.Windows.Application
         var systemIntegrity = new SystemIntegrityService(log, () => dns.HasAppliedCustomDns);
         var sentinel = new SentinelService(
             log, fileIdentity, signatures, reputation, scannerHost,
-            autoruns, behaviourWatcher, trustStore, verdictCache,
+            autoruns, behaviourWatcher, behaviorEngine, trustStore, verdictCache,
             ransomwareGuard, massChange, defenderHealth, networkMonitor, systemIntegrity, settings,
             baselineBuilder, hashFeeds, scanHistory, () => gameMode.IsActive);
 

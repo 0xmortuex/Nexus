@@ -23,6 +23,7 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.6" />
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
@@ -32,9 +33,7 @@
     <!-- Build order only. The scanner is a separate *process*, deliberately not a
          referenced assembly: the whole point of it is that its code never runs
          inside this elevated process. -->
-    <ProjectReference Include="..\Nexus.Scanner\Nexus.Scanner.csproj"
-                      ReferenceOutputAssembly="false"
-                      Private="false" />
+    <ProjectReference Include="..\Nexus.Scanner\Nexus.Scanner.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -50,10 +49,7 @@
     <ItemGroup>
       <ScannerOutput Include="$(MSBuildThisFileDirectory)..\Nexus.Scanner\bin\$(Configuration)\net8.0\Nexus.Scanner.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(ScannerOutput)"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\Nexus.Scanner\bin\$(Configuration)\net8.0')" />
+    <Copy SourceFiles="@(ScannerOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(MSBuildThisFileDirectory)..\Nexus.Scanner\bin\$(Configuration)\net8.0')" />
   </Target>
 
   <!-- Publish is a separate pipeline from Build, so the copy above does NOT cover it:
@@ -70,9 +66,7 @@
       <ScannerStagingDir>$(MSBuildThisFileDirectory)obj\scanner-publish\$(Configuration)\</ScannerStagingDir>
     </PropertyGroup>
 
-    <MSBuild Projects="$(MSBuildThisFileDirectory)..\Nexus.Scanner\Nexus.Scanner.csproj"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishTrimmed=true;PublishDir=$(ScannerStagingDir)" />
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\Nexus.Scanner\Nexus.Scanner.csproj" Targets="Publish" Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;PublishTrimmed=true;PublishDir=$(ScannerStagingDir)" />
 
     <ItemGroup>
       <ScannerPublished Include="$(ScannerStagingDir)Nexus.Scanner.exe" />
@@ -83,7 +77,6 @@
     <!-- Fail the publish rather than shipping a build whose scanner is missing.
          A silently disabled engine is the worst outcome: the product looks complete
          and reports "unknown" on everything it should have had an opinion about. -->
-    <Error Condition="!Exists('$(PublishDir)Nexus.Scanner.exe')"
-           Text="Nexus.Scanner.exe was not published. Sentinel would ship without file scanning." />
+    <Error Condition="!Exists('$(PublishDir)Nexus.Scanner.exe')" Text="Nexus.Scanner.exe was not published. Sentinel would ship without file scanning." />
   </Target>
 </Project>

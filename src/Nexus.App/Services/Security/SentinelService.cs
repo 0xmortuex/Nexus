@@ -56,6 +56,7 @@ public sealed class SentinelService : IDisposable
     private readonly ScanHistory _history;
     private readonly SecurityPostureService _posture;
     private readonly BrowserExtensionService _extensions;
+    private readonly EtwProcessWatcher _etw;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
     public const int MaxAlerts = 500;
@@ -76,6 +77,7 @@ public sealed class SentinelService : IDisposable
         ScannerHost scanner,
         AutorunEnumerator autoruns,
         ProcessDetailWatcher behaviour,
+        Nexus.Core.Security.Behavior.BehaviorEngine behaviorEngine,
         TrustStore trust,
         VerdictCache cache,
         RansomwareGuardService ransomware,
@@ -111,6 +113,7 @@ public sealed class SentinelService : IDisposable
         _history = history;
         _posture = new SecurityPostureService(log);
         _extensions = new BrowserExtensionService(log);
+        _etw = new EtwProcessWatcher(log, behaviorEngine);
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -155,8 +158,10 @@ public sealed class SentinelService : IDisposable
 
         _behaviour.FindingRaised -= OnBehaviourFinding;
         _ransomware.Detected -= OnRansomwareFinding;
+        _etw.FindingRaised -= OnBehaviourFinding;
 
         TryStart("stopping behaviour monitoring", _behaviour.Stop);
+        TryStart("stopping the ETW process watch", _etw.Stop);
         TryStart("stopping the ransomware watch", _ransomware.Stop);
         TryStart("stopping download checks", _downloads.Stop);
         TryStart("stopping USB drive checks", _removableDrives.Stop);
@@ -185,10 +190,7 @@ public sealed class SentinelService : IDisposable
         // writes files into the user's own folders and behaviour monitoring runs a
         // WMI subscription — so honouring the switch matters more than convenience.
         if (options.BehaviourMonitoring)
-        {
-            _behaviour.FindingRaised += OnBehaviourFinding;
-            TryStart("behaviour monitoring", _behaviour.Start);
-        }
+            StartBehaviourMonitoring();
 
         if (options.RansomwareWatch)
         {
@@ -215,6 +217,36 @@ public sealed class SentinelService : IDisposable
 
         ProtectionStateChanged?.Invoke();
     }
+
+    /// <summary>
+    /// Start behaviour monitoring, preferring ETW.
+    ///
+    /// WMI delivers process-creation events on a one-second polling window, so a
+    /// process that starts and exits inside it is missed entirely — and that is the
+    /// normal shape of the thing worth catching, not a rare edge case. ETW sees every
+    /// creation as the kernel performs it.
+    ///
+    /// ETW needs administrator rights, which Nexus has, but it can still fail: policy
+    /// can disable it, and another tool can be holding the session. Falling back keeps
+    /// a degraded watcher rather than none, and the Security tab says which one is
+    /// running so "behaviour monitoring: on" never means two different things without
+    /// the user being able to tell.
+    /// </summary>
+    private void StartBehaviourMonitoring()
+    {
+        _etw.FindingRaised += OnBehaviourFinding;
+
+        if (_etw.TryStart())
+            return;
+
+        _etw.FindingRaised -= OnBehaviourFinding;
+
+        _behaviour.FindingRaised += OnBehaviourFinding;
+        TryStart("behaviour monitoring", _behaviour.Start);
+    }
+
+    /// <summary>True when the precise watcher is the one running.</summary>
+    public bool BehaviourMonitoringUsesEtw => _etw.IsRunning;
 
     private void TryStart(string what, Action start)
     {
@@ -683,10 +715,17 @@ public sealed class SentinelService : IDisposable
 
             new ProtectionComponent(
                 "Behaviour monitoring",
-                _behaviour.IsRunning,
+                _etw.IsRunning || _behaviour.IsRunning,
                 !options.BehaviourMonitoring
                     ? "Turned off in Settings."
-                    : _behaviour.IsRunning ? "Watching process launches." : "Could not start — see the Log tab."),
+                    // Which watcher is running changes what the feature actually
+                    // covers, so "on" must not mean two different things silently.
+                    : _etw.IsRunning
+                        ? "Watching every process launch, including very short-lived ones (ETW)."
+                        : _behaviour.IsRunning
+                            ? "Watching process launches. Using the WMI watcher, which polls once a " +
+                              "second and can miss a process that starts and exits inside that window."
+                            : "Could not start — see the Log tab."),
 
             new ProtectionComponent(
                 "Ransomware watch",
