@@ -11,13 +11,13 @@ namespace Nexus.Core.Performance;
 /// </summary>
 public sealed record LatencySummary
 {
-    public required int SampleCount { get; init; }
-    public required double MinMs { get; init; }
-    public required double MedianMs { get; init; }
-    public required double P95Ms { get; init; }
-    public required double P99Ms { get; init; }
-    public required double MaxMs { get; init; }
-    public required double MeanMs { get; init; }
+    public required int SampleCount { get; set; }
+    public required double MinMs { get; set; }
+    public required double MedianMs { get; set; }
+    public required double P95Ms { get; set; }
+    public required double P99Ms { get; set; }
+    public required double MaxMs { get; set; }
+    public required double MeanMs { get; set; }
 
     /// <summary>Spread between the median and the 99th percentile — the number that
     /// corresponds to "it mostly runs fine but hitches".</summary>

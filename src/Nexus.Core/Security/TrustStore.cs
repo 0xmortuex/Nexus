@@ -13,7 +13,7 @@ public sealed record TrustDecision(
 
 public sealed record TrustStoreState
 {
-    public IReadOnlyList<TrustDecision> Decisions { get; init; } = [];
+    public IReadOnlyList<TrustDecision> Decisions { get; set; } = [];
 }
 
 /// <summary>

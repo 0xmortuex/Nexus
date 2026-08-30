@@ -14,14 +14,14 @@ public enum WatchdogActionKind
 /// (OR, when both set) for the configured duration, fire the chosen action.</summary>
 public sealed record WatchdogRule
 {
-    public required string ExeName { get; init; }
-    public bool Enabled { get; init; } = true;
-    public double? CpuAbovePct { get; init; }
-    public long? WorkingSetAboveBytes { get; init; }
-    public int ForSeconds { get; init; } = 10;
-    public WatchdogActionKind Action { get; init; } = WatchdogActionKind.LowerPriority;
+    public required string ExeName { get; set; }
+    public bool Enabled { get; set; } = true;
+    public double? CpuAbovePct { get; set; }
+    public long? WorkingSetAboveBytes { get; set; }
+    public int ForSeconds { get; set; } = 10;
+    public WatchdogActionKind Action { get; set; } = WatchdogActionKind.LowerPriority;
     /// <summary>After firing, leave the process alone this long before re-arming.</summary>
-    public int CooldownSeconds { get; init; } = 60;
+    public int CooldownSeconds { get; set; } = 60;
 
     public string NormalizedName => ProcessRule.Normalize(ExeName);
 }

@@ -5,12 +5,12 @@ namespace Nexus.Core.Security;
 /// <summary>A previous conclusion, small enough to keep thousands of.</summary>
 public sealed record CachedVerdict
 {
-    public required string IdentityKey { get; init; }
-    public required string FileName { get; init; }
-    public required ThreatLevel Level { get; init; }
-    public required int Score { get; init; }
-    public required DateTimeOffset EvaluatedAt { get; init; }
-    public required string Headline { get; init; }
+    public required string IdentityKey { get; set; }
+    public required string FileName { get; set; }
+    public required ThreatLevel Level { get; set; }
+    public required int Score { get; set; }
+    public required DateTimeOffset EvaluatedAt { get; set; }
+    public required string Headline { get; set; }
 
     // ---- Fast-path identity ----
     //
@@ -25,9 +25,9 @@ public sealed record CachedVerdict
     // cache for skipping repeat work, not a trust decision. Trust is keyed on the
     // hash alone (see TrustStore) and is never served from here.
 
-    public string? Path { get; init; }
-    public long SizeBytes { get; init; }
-    public long LastWriteUtcTicks { get; init; }
+    public string? Path { get; set; }
+    public long SizeBytes { get; set; }
+    public long LastWriteUtcTicks { get; set; }
 }
 
 public sealed record VerdictCacheState
@@ -35,9 +35,9 @@ public sealed record VerdictCacheState
     /// <summary>Stamp of the detection content that produced these verdicts. When it
     /// changes, every entry is discarded — a cached "clean" from an older ruleset is
     /// worse than no answer, because it silently suppresses a new detection.</summary>
-    public string RulesVersion { get; init; } = "";
+    public string RulesVersion { get; set; } = "";
 
-    public IReadOnlyList<CachedVerdict> Entries { get; init; } = [];
+    public IReadOnlyList<CachedVerdict> Entries { get; set; } = [];
 }
 
 /// <summary>

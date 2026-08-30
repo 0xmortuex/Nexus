@@ -4,14 +4,14 @@ namespace Nexus.Core.Enforcement;
 
 public sealed record SmartTrimOptions
 {
-    public bool Enabled { get; init; }
+    public bool Enabled { get; set; }
     /// <summary>Only processes with a working set above this are trimmed.</summary>
-    public int WorkingSetThresholdMb { get; init; } = 300;
+    public int WorkingSetThresholdMb { get; set; } = 300;
     /// <summary>How often a trim pass runs.</summary>
-    public int IntervalMinutes { get; init; } = 5;
+    public int IntervalMinutes { get; set; } = 5;
     /// <summary>Per-process cooldown so the same process isn't trimmed back-to-back
     /// (re-faulting pages in costs more than the trim saves).</summary>
-    public int CooldownMinutes { get; init; } = 15;
+    public int CooldownMinutes { get; set; } = 15;
 }
 
 /// <summary>Pure selection of working-set trim targets: background processes over the

@@ -25,6 +25,13 @@ public partial class App : System.Windows.Application
     /// logic are discarded instead of suppressing a new detection.</summary>
     private const string SentinelRulesVersion = "sentinel-1";
 
+    /// <summary>
+    /// False until the main window is up. Until then an unhandled exception must be
+    /// shown and the app closed, not swallowed — a swallowed startup failure leaves a
+    /// process running with no window, which the user can only find in Task Manager.
+    /// </summary>
+    private bool _startupCompleted;
+
     private Mutex? _singleInstanceMutex;
     private ActivityLog? _log;
     private MainWindow? _window;
@@ -53,6 +60,28 @@ public partial class App : System.Windows.Application
         DispatcherUnhandledException += (_, args) =>
         {
             log.Error("App", $"Unhandled UI exception: {args.Exception}");
+
+            // Swallowing is right AFTER the window exists: one broken tab should not
+            // take the optimizer engines down with it, and the Log tab shows what
+            // happened. Before that, it is badly wrong — it leaves a process running
+            // with no window and no way to reach it, which is exactly what happened
+            // when a settings file written by an older build produced a null section.
+            // A startup failure has to be visible.
+            if (!_startupCompleted)
+            {
+                MessageBox.Show(
+                    "Nexus could not finish starting up.\n\n" +
+                    $"{args.Exception.GetType().Name}: {args.Exception.Message}\n\n" +
+                    $"The full details are in:\n{paths.LogsDirectory}\n\n" +
+                    "Nexus will close now rather than keep running where you cannot see it.",
+                    "Nexus — startup failed",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+
+                args.Handled = true;
+                Shutdown(1);
+                return;
+            }
+
             args.Handled = true; // keep the engines alive; the log tab shows the details
         };
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -235,6 +264,7 @@ public partial class App : System.Windows.Application
         };
 
         _window.Show();
+        _startupCompleted = true;
         log.Info("App", "Nexus ready. Closing the window minimizes to the tray.");
 
         // First run: guide the user through setup.

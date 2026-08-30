@@ -16,10 +16,10 @@ public sealed record ProcessMutationRecord(
 /// and how to put it back.</summary>
 public sealed record IntendedState
 {
-    public string? ActiveGameExe { get; init; }
-    public string? PreviousPowerPlanGuid { get; init; }
-    public bool WindowsUpdatePaused { get; init; }
-    public IReadOnlyList<ProcessMutationRecord> Mutations { get; init; } = [];
+    public string? ActiveGameExe { get; set; }
+    public string? PreviousPowerPlanGuid { get; set; }
+    public bool WindowsUpdatePaused { get; set; }
+    public IReadOnlyList<ProcessMutationRecord> Mutations { get; set; } = [];
 
     public bool IsEmpty => ActiveGameExe is null
         && PreviousPowerPlanGuid is null

@@ -2,8 +2,8 @@ namespace Nexus.Core.Enforcement;
 
 public sealed record IdleSaverOptions
 {
-    public bool Enabled { get; init; }
-    public int IdleMinutes { get; init; } = 10;
+    public bool Enabled { get; set; }
+    public int IdleMinutes { get; set; } = 10;
 }
 
 public enum IdleTransition

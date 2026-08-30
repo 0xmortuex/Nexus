@@ -8,6 +8,6 @@ public sealed record AdapterDnsBackup(string InterfaceGuid, string AdapterName, 
 /// even after a restart.</summary>
 public sealed record DnsBackupState
 {
-    public IReadOnlyList<AdapterDnsBackup> Adapters { get; init; } = [];
+    public IReadOnlyList<AdapterDnsBackup> Adapters { get; set; } = [];
     public bool Applied => Adapters.Count > 0;
 }

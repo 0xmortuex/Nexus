@@ -5,24 +5,24 @@ namespace Nexus.Core.Performance;
 /// <summary>A saved measurement run, kept so a change can be compared against it later.</summary>
 public sealed record StoredBaseline
 {
-    public required string Label { get; init; }
-    public required DateTimeOffset CapturedAt { get; init; }
-    public required LatencySummary Summary { get; init; }
+    public required string Label { get; set; }
+    public required DateTimeOffset CapturedAt { get; set; }
+    public required LatencySummary Summary { get; set; }
 
     /// <summary>The raw samples. Kept because the comparison is a bootstrap over the
     /// actual distribution — summary statistics alone cannot produce a confidence
     /// interval, and without one there is no way to say "no measurable difference"
     /// with a straight face.</summary>
-    public required IReadOnlyList<double> Samples { get; init; }
+    public required IReadOnlyList<double> Samples { get; set; }
 
     /// <summary>What the machine was doing, recorded so a user can tell whether two
     /// runs are actually comparable.</summary>
-    public string? Notes { get; init; }
+    public string? Notes { get; set; }
 }
 
 public sealed record BaselineState
 {
-    public IReadOnlyList<StoredBaseline> Baselines { get; init; } = [];
+    public IReadOnlyList<StoredBaseline> Baselines { get; set; } = [];
 }
 
 /// <summary>

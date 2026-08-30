@@ -18,19 +18,19 @@ namespace Nexus.Core.Security.Scanning;
 public sealed record ScanRequest
 {
     /// <summary>Correlates the response; the host generates it.</summary>
-    public required string Id { get; init; }
+    public required string Id { get; set; }
 
-    public required string Path { get; init; }
+    public required string Path { get; set; }
 }
 
 /// <summary>A signal as it crosses the process boundary.</summary>
 public sealed record ScanSignal
 {
-    public required string Source { get; init; }
-    public required string Weight { get; init; }
-    public required string Code { get; init; }
-    public required string Explanation { get; init; }
-    public bool Exonerating { get; init; }
+    public required string Source { get; set; }
+    public required string Weight { get; set; }
+    public required string Code { get; set; }
+    public required string Explanation { get; set; }
+    public bool Exonerating { get; set; }
 
     public static ScanSignal From(SecuritySignal signal) => new()
     {
@@ -63,13 +63,13 @@ public sealed record ScanSignal
 
 public sealed record ScanResponse
 {
-    public required string Id { get; init; }
-    public IReadOnlyList<ScanSignal> Signals { get; init; } = [];
+    public required string Id { get; set; }
+    public IReadOnlyList<ScanSignal> Signals { get; set; } = [];
 
     /// <summary>Set when the worker could not analyse the file at all.</summary>
-    public string? Error { get; init; }
+    public string? Error { get; set; }
 
     /// <summary>Which engines actually ran, so the host can tell "clean" from
     /// "nobody looked".</summary>
-    public IReadOnlyList<string> EnginesConsulted { get; init; } = [];
+    public IReadOnlyList<string> EnginesConsulted { get; set; } = [];
 }

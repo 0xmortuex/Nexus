@@ -25,26 +25,26 @@ public enum QuarantineStatus
 /// <summary>One quarantined file and everything needed to put it back exactly.</summary>
 public sealed record QuarantineEntry
 {
-    public required string Id { get; init; }
-    public required string OriginalPath { get; init; }
-    public required string QuarantinePath { get; init; }
-    public string? Sha256 { get; init; }
-    public long SizeBytes { get; init; }
-    public required DateTimeOffset QuarantinedAt { get; init; }
-    public required ThreatLevel Level { get; init; }
+    public required string Id { get; set; }
+    public required string OriginalPath { get; set; }
+    public required string QuarantinePath { get; set; }
+    public string? Sha256 { get; set; }
+    public long SizeBytes { get; set; }
+    public required DateTimeOffset QuarantinedAt { get; set; }
+    public required ThreatLevel Level { get; set; }
 
     /// <summary>Plain-language reason, shown in the UI and preserved for restores.</summary>
-    public required string Reason { get; init; }
+    public required string Reason { get; set; }
 
-    public QuarantineStatus Status { get; init; } = QuarantineStatus.Pending;
+    public QuarantineStatus Status { get; set; } = QuarantineStatus.Pending;
 
     /// <summary>Why a Failed entry failed, for the log.</summary>
-    public string? Error { get; init; }
+    public string? Error { get; set; }
 }
 
 public sealed record QuarantineState
 {
-    public IReadOnlyList<QuarantineEntry> Entries { get; init; } = [];
+    public IReadOnlyList<QuarantineEntry> Entries { get; set; } = [];
 }
 
 /// <summary>

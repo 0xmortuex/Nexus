@@ -4,9 +4,9 @@ namespace Nexus.Core.Enforcement;
 
 public sealed record InstanceLimit
 {
-    public required string ExeName { get; init; }
-    public int MaxInstances { get; init; } = 1;
-    public bool Enabled { get; init; } = true;
+    public required string ExeName { get; set; }
+    public int MaxInstances { get; set; } = 1;
+    public bool Enabled { get; set; } = true;
 
     public string NormalizedName => ProcessRule.Normalize(ExeName);
 }

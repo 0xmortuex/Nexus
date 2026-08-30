@@ -14,11 +14,11 @@ public sealed record AppliedTweak(
 
 public sealed record TweaksState
 {
-    public IReadOnlyList<AppliedTweak> Applied { get; init; } = [];
+    public IReadOnlyList<AppliedTweak> Applied { get; set; } = [];
     /// <summary>Service start values captured by the debloat page (undo data).</summary>
-    public IReadOnlyList<CapturedValue> ServiceOriginals { get; init; } = [];
+    public IReadOnlyList<CapturedValue> ServiceOriginals { get; set; } = [];
     /// <summary>Scheduled tasks Nexus disabled (undo = re-enable).</summary>
-    public IReadOnlyList<string> DisabledTasks { get; init; } = [];
+    public IReadOnlyList<string> DisabledTasks { get; set; } = [];
 }
 
 /// <summary>Persists which tweaks are applied and everything needed to undo them.</summary>
