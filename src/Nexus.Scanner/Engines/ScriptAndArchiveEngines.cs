@@ -209,14 +209,14 @@ public sealed class ArchiveStaticEngine : IStaticEngine
     private static SecuritySignal Encrypted(ArchiveInspector.ArchiveFormat format) =>
         new(SignalSource.StaticRules, SignalWeight.Moderate, "archive-encrypted",
             $"This {Describe(format)} archive is password-protected, including its list of contents, " +
-            "so Nexus could not see what is inside it. Nothing here has been cleared \u2014 it has not " +
+            "so Nexus could not see what is inside it. Nothing here has been cleared — it has not " +
             "been looked at. Sending a protected archive together with its password is a common way " +
             "to get something past a scanner, and also how plenty of people legitimately send documents.");
 
     private static SecuritySignal EncryptedEntries(int encrypted, int total) =>
         new(SignalSource.StaticRules, SignalWeight.Moderate, "archive-encrypted",
             $"{encrypted} of the {total} file(s) in this archive are password-protected, so Nexus " +
-            "could not read them. They have not been cleared \u2014 they have not been looked at.");
+            "could not read them. They have not been cleared — they have not been looked at.");
 
     private static string Describe(ArchiveInspector.ArchiveFormat format) => format switch
     {

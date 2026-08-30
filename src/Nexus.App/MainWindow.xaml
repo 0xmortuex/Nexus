@@ -685,6 +685,9 @@
                                         Command="{Binding AuditStartupCommand}"/>
                                 <Button Content="Check connections" Margin="0,0,8,0"
                                         Command="{Binding CheckConnectionsCommand}"/>
+                                <Button Content="Check Windows security settings" Margin="0,0,8,0"
+                                        ToolTip="Firewall, UAC, SmartScreen, Secure Boot, drive encryption and Windows Update. Reports how the machine is set up; changes nothing."
+                                        Command="{Binding AuditPostureCommand}"/>
                                 <Button Content="Check network settings" Margin="0,0,8,0"
                                         ToolTip="Checks the hosts file, proxy and DNS servers — the settings malware changes to cut you off from help."
                                         Command="{Binding AuditSystemSettingsCommand}"/>

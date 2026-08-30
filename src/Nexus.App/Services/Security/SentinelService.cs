@@ -54,6 +54,7 @@ public sealed class SentinelService : IDisposable
     private readonly DownloadWatcherService _downloads;
     private readonly RemovableDriveWatcherService _removableDrives;
     private readonly ScanHistory _history;
+    private readonly SecurityPostureService _posture;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
     public const int MaxAlerts = 500;
@@ -107,6 +108,7 @@ public sealed class SentinelService : IDisposable
         _downloads = new DownloadWatcherService(log, ScanDownloadAsync, isGameModeActive);
         _removableDrives = new RemovableDriveWatcherService(log, ScanDriveAsync);
         _history = history;
+        _posture = new SecurityPostureService(log);
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -806,6 +808,40 @@ public sealed class SentinelService : IDisposable
 
         _log.Info("Sentinel",
             $"Checked the hosts file, proxy and DNS settings; {signals.Count} thing(s) worth a look.");
+
+        return signals.Count;
+    }
+
+    /// <summary>
+    /// Check how Windows is set up to defend itself: firewall, UAC, SmartScreen,
+    /// Secure Boot, drive encryption, and when updates last landed.
+    ///
+    /// None of this is about malware being present. It is about whether the doors are
+    /// shut, which no scan answers and which people genuinely do not know about their
+    /// own machine — these settings get changed by a game guide or an installer years
+    /// ago and nothing mentions it again.
+    /// </summary>
+    /// <returns>How many things are worth a look.</returns>
+    public int AuditSecurityPosture()
+    {
+        var facts = _posture.Collect();
+        var signals = SecurityPostureAudit.Evaluate(facts, DateTimeOffset.Now);
+
+        if (signals.Count > 0)
+        {
+            var verdict = VerdictEngine.Evaluate(new VerdictInput
+            {
+                Target = ScanTarget.ForFile("Windows security settings"),
+                Signals = signals,
+                EnginesConsulted = new HashSet<SignalSource> { SignalSource.Persistence },
+            }, DateTimeOffset.Now);
+
+            Report(verdict, origin: "security settings");
+        }
+
+        _log.Info("Sentinel",
+            $"Checked the firewall, UAC, SmartScreen, Secure Boot, drive encryption and update " +
+            $"history; {signals.Count} thing(s) worth a look.");
 
         return signals.Count;
     }

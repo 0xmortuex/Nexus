@@ -130,6 +130,7 @@ public sealed class SecurityViewModel : ViewModelBase
         RemoveExclusionCommand = new RelayCommand(p => RemoveExclusion(p as ExclusionRow));
         BrowseExclusionCommand = new RelayCommand(BrowseForExclusion);
         AuditSystemSettingsCommand = new RelayCommand(AuditSystemSettings);
+        AuditPostureCommand = new RelayCommand(AuditPosture);
         FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
         SaveReportCommand = new RelayCommand(SaveReport);
         ClearHistoryCommand = new RelayCommand(() => { _history.Clear(); RefreshHistory(); });
@@ -185,6 +186,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand RemoveExclusionCommand { get; }
     public RelayCommand BrowseExclusionCommand { get; }
     public RelayCommand AuditSystemSettingsCommand { get; }
+    public RelayCommand AuditPostureCommand { get; }
     public RelayCommand FullScanCommand { get; }
     public RelayCommand SaveReportCommand { get; }
     public RelayCommand ClearHistoryCommand { get; }
@@ -653,6 +655,25 @@ public sealed class SecurityViewModel : ViewModelBase
     /// machine off from help. Nothing here involves a running program, so no other
     /// part of Sentinel would ever notice it.
     /// </summary>
+    /// <summary>
+    /// Firewall, UAC, SmartScreen, Secure Boot, encryption, updates.
+    ///
+    /// Findings here describe configuration, not infection, and the wording says so.
+    /// A user who reads "your firewall is off" as "you have a virus" has been misled
+    /// by the tool, not informed by it.
+    /// </summary>
+    private void AuditPosture()
+    {
+        int found = _sentinel.AuditSecurityPosture();
+
+        Status = found == 0
+            ? "Checked the firewall, UAC, SmartScreen, Secure Boot, drive encryption and Windows " +
+              "Update. Everything is set up sensibly."
+            : $"Checked your Windows security settings and found {found} worth knowing about — " +
+              "they are in the findings list below. These describe how the machine is set up, not " +
+              "anything infecting it, and nothing was changed.";
+    }
+
     private void AuditSystemSettings()
     {
         int found = _sentinel.AuditSystemSettings();
