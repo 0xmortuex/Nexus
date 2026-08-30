@@ -79,7 +79,8 @@ public sealed class SentinelService : IDisposable
         NetworkMonitorService network,
         SettingsService settings,
         KnownGoodBaselineService baseline,
-        HashFeedImportService feeds)
+        HashFeedImportService feeds,
+        Func<bool> isGameModeActive)
     {
         _log = log;
         _identity = identity;
@@ -97,7 +98,7 @@ public sealed class SentinelService : IDisposable
         _settings = settings;
         _baseline = baseline;
         _feeds = feeds;
-        _downloads = new DownloadWatcherService(log, ScanDownloadAsync);
+        _downloads = new DownloadWatcherService(log, ScanDownloadAsync, isGameModeActive);
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>

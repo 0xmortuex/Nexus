@@ -121,7 +121,7 @@ public partial class App : System.Windows.Application
             log, fileIdentity, signatures, reputation, scannerHost,
             autoruns, behaviourWatcher, trustStore, verdictCache,
             ransomwareGuard, massChange, defenderHealth, networkMonitor, settings,
-            baselineBuilder, hashFeeds);
+            baselineBuilder, hashFeeds, () => gameMode.IsActive);
 
         var tweakState = new TweakStateStore(paths);
         var registryApplier = new RegistryTweakApplier();

@@ -47,18 +47,24 @@ public sealed class DownloadWatcherService : IDisposable
         ".crdownload", ".part", ".partial", ".tmp", ".download", ".opdownload",
     };
 
+    /// <summary>How often to re-check whether the game has finished.</summary>
+    private static readonly TimeSpan GameModePoll = TimeSpan.FromSeconds(30);
+
     private readonly ActivityLog _log;
     private readonly Func<string, CancellationToken, Task> _scan;
+    private readonly Func<bool> _isGameModeActive;
     private readonly List<FileSystemWatcher> _watchers = [];
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _shutdown = new();
 
     private bool _running;
 
-    public DownloadWatcherService(ActivityLog log, Func<string, CancellationToken, Task> scan)
+    public DownloadWatcherService(
+        ActivityLog log, Func<string, CancellationToken, Task> scan, Func<bool> isGameModeActive)
     {
         _log = log;
         _scan = scan;
+        _isGameModeActive = isGameModeActive;
     }
 
     public bool IsRunning => _running;
@@ -145,6 +151,13 @@ public sealed class DownloadWatcherService : IDisposable
 
                 if (IsReadable(path))
                 {
+                    // Deferred, not skipped. Reading a fresh download means spawning
+                    // the worker and pulling the file off disk, which is exactly the
+                    // competition Nexus's other half exists to prevent — and someone
+                    // downloading a game update while playing is not a rare case. The
+                    // check is not time-critical to the second, so it waits.
+                    await WaitWhileGamingAsync(path).ConfigureAwait(false);
+
                     await _scan(path, _shutdown.Token).ConfigureAwait(false);
                     return;
                 }
@@ -168,6 +181,26 @@ public sealed class DownloadWatcherService : IDisposable
         {
             _inFlight.TryRemove(path, out _);
         }
+    }
+
+    /// <summary>
+    /// Block until no game is running.
+    ///
+    /// Unbounded on purpose: a session can last hours, and giving up would mean
+    /// silently not checking the file. If Nexus shuts down first the scan is lost,
+    /// which is acceptable because the scheduled check covers the Downloads folder
+    /// anyway — so the file is examined either way, just later.
+    /// </summary>
+    private async Task WaitWhileGamingAsync(string path)
+    {
+        if (!_isGameModeActive())
+            return;
+
+        _log.Info("Sentinel",
+            $"Holding the check on {Path.GetFileName(path)} until you have finished playing.");
+
+        while (_isGameModeActive())
+            await Task.Delay(GameModePoll, _shutdown.Token).ConfigureAwait(false);
     }
 
     /// <summary>True once the writer has let go of the file.</summary>
