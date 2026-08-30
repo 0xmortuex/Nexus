@@ -121,6 +121,79 @@ public class MassChangeDetectorTests
         Assert.Equal(".locked", finding.SuspiciousExtension);
     }
 
+    /// <summary>
+    /// Games save atomically: write a temporary file, then rename it into place. Doing
+    /// that eight times in a minute is not an encryption run, and it used to raise one
+    /// — during a game, which is the worst possible moment to be wrong.
+    /// </summary>
+    [Fact]
+    public void A_game_saving_atomically_does_not_alert()
+    {
+        var detector = new MassChangeDetector();
+
+        var events = Enumerable.Range(0, 30)
+            .Select(i => Change(
+                $@"C:\Users\fadi\Documents\My Games\slot{i}.sav",
+                FileChangeKind.Renamed,
+                secondsIn: i * 0.3,
+                oldPath: $@"C:\Users\fadi\Documents\My Games\tmp{i}.tmp"));
+
+        Assert.Null(FeedUntilFinding(detector, events));
+    }
+
+    /// <summary>Any software renaming its own working files into its own format has
+    /// the same shape and must stay quiet too.</summary>
+    [Fact]
+    public void Software_renaming_its_own_working_files_does_not_alert()
+    {
+        var detector = new MassChangeDetector();
+
+        var events = Enumerable.Range(0, 30)
+            .Select(i => Change(
+                $@"C:\Users\fadi\Documents\project\asset{i}.bundle",
+                FileChangeKind.Renamed,
+                secondsIn: i * 0.2,
+                oldPath: $@"C:\Users\fadi\Documents\project\asset{i}.staging"));
+
+        Assert.Null(FeedUntilFinding(detector, events));
+    }
+
+    /// <summary>The distinguishing feature is that the file was a document
+    /// immediately before it was renamed.</summary>
+    [Fact]
+    public void Renaming_documents_into_one_new_extension_still_alerts()
+    {
+        var detector = new MassChangeDetector();
+
+        var events = Enumerable.Range(0, MassChangeDetector.UniformExtensionThreshold + 2)
+            .Select(i => Change(
+                $@"C:\Users\fadi\Documents\report{i}.docx.crypt",
+                FileChangeKind.Renamed,
+                secondsIn: i * 0.1,
+                oldPath: $@"C:\Users\fadi\Documents\report{i}.docx"));
+
+        var finding = FeedUntilFinding(detector, events);
+
+        Assert.NotNull(finding);
+        Assert.Contains(finding.Signals, s => s.Code == "ransom-uniform-extension");
+        Assert.Equal(".crypt", finding.SuspiciousExtension);
+    }
+
+    [Fact]
+    public void Moving_documents_without_changing_their_type_does_not_alert()
+    {
+        var detector = new MassChangeDetector();
+
+        var events = Enumerable.Range(0, 30)
+            .Select(i => Change(
+                $@"C:\Users\fadi\Documents\archive\report{i}.docx",
+                FileChangeKind.Renamed,
+                secondsIn: i * 0.1,
+                oldPath: $@"C:\Users\fadi\Documents\report{i}.docx"));
+
+        Assert.Null(FeedUntilFinding(detector, events));
+    }
+
     [Fact]
     public void Renaming_many_files_to_ordinary_extensions_does_not_alert()
     {

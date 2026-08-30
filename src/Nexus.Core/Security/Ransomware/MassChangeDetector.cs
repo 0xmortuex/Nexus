@@ -103,7 +103,10 @@ public sealed class MassChangeDetector
         "unlock_files", "ransom",
     ];
 
-    private readonly record struct TrackedChange(string Path, string Extension, DateTimeOffset At);
+    /// <param name="TallyExtension">The extension counted toward the uniform-rename
+    /// rule, or empty when this change should not count toward it.</param>
+    private readonly record struct TrackedChange(
+        string Path, string TallyExtension, DateTimeOffset At);
 
     private readonly Queue<TrackedChange> _window = new();
 
@@ -244,9 +247,11 @@ public sealed class MassChangeDetector
         if (!counts)
             return;
 
-        _window.Enqueue(new TrackedChange(change.Path, extension, change.At));
+        var tallyExtension = ExtensionForUniformRule(change, extension);
+
+        _window.Enqueue(new TrackedChange(change.Path, tallyExtension, change.At));
         Retain(change.Path);
-        RetainExtension(extension);
+        RetainExtension(tallyExtension);
 
         while (_window.Count > MaxTrackedEvents)
             Evict();
@@ -254,6 +259,35 @@ public sealed class MassChangeDetector
 
     private static bool IsRenameTarget(FileChangeEvent change) =>
         change.OldPath is { Length: > 0 };
+
+    /// <summary>
+    /// The extension this change contributes to the uniform-rename rule, or empty if
+    /// it contributes nothing.
+    ///
+    /// Ransomware renames <i>documents</i> into a new extension: report.docx becomes
+    /// report.docx.locked. Counting every rename to an unfamiliar extension looked
+    /// equivalent and is not — plenty of ordinary software renames working files into
+    /// its own format, and games in particular save atomically by writing a temporary
+    /// file and renaming it to something like .sav. Eight of those inside a minute
+    /// used to be enough to raise a ransomware alarm, in the middle of a game, which
+    /// is both wrong and the worst possible moment to be wrong.
+    ///
+    /// Requiring the file to have been a document immediately before the rename keeps
+    /// the encryption pattern and drops that entire class of false positive.
+    /// </summary>
+    private static string ExtensionForUniformRule(FileChangeEvent change, string newExtension)
+    {
+        if (change.Kind != FileChangeKind.Renamed || change.OldPath is not { Length: > 0 } oldPath)
+            return "";
+
+        var oldExtension = Path.GetExtension(oldPath);
+
+        if (!DocumentExtensions.Contains(oldExtension))
+            return "";
+
+        // A document keeping its own extension is just a move, not an encryption.
+        return DocumentExtensions.Contains(newExtension) ? "" : newExtension;
+    }
 
     private void Prune(DateTimeOffset now)
     {
@@ -267,7 +301,7 @@ public sealed class MassChangeDetector
     {
         var dropped = _window.Dequeue();
         Release(dropped.Path);
-        ReleaseExtension(dropped.Extension);
+        ReleaseExtension(dropped.TallyExtension);
     }
 
     private void Retain(string path)
