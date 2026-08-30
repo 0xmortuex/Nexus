@@ -169,39 +169,39 @@ public sealed class QuarantineService
             bool atOrigin = File.Exists(entry.OriginalPath);
             bool inQuarantine = File.Exists(entry.QuarantinePath);
 
-            switch (atOrigin, inQuarantine)
+            var action = QuarantineReconciler.Decide(entry.Status, atOrigin, inQuarantine);
+            var name = Path.GetFileName(entry.OriginalPath);
+
+            switch (action)
             {
-                case (false, true):
-                    // The move completed but the status was never written.
+                case ReconcileAction.MarkHeld:
                     _journal.MarkHeld(entry.Id);
-                    _log.Info("Sentinel", $"{Path.GetFileName(entry.OriginalPath)} is in quarantine.");
                     break;
 
-                case (true, false):
-                    // The move never happened. The file is untouched, which is the
-                    // outcome to prefer whenever it is ambiguous.
+                case ReconcileAction.MarkRestored:
+                    _journal.MarkRestored(entry.Id);
+                    break;
+
+                case ReconcileAction.MarkNeverMoved:
                     _journal.MarkFailed(entry.Id, "interrupted before the file was moved");
-                    _log.Info("Sentinel",
-                        $"{Path.GetFileName(entry.OriginalPath)} was never moved and is where it always was.");
                     break;
 
-                case (true, true):
-                    // Both exist: a copy survived on each side. Keep the original and
-                    // drop the duplicate rather than guessing which one is wanted.
+                case ReconcileAction.KeepOriginalAndDeleteQuarantineCopy:
                     TryDelete(entry.QuarantinePath);
                     _journal.MarkFailed(entry.Id, "interrupted mid-move; the original was kept");
-                    _log.Warn("Sentinel",
-                        $"{Path.GetFileName(entry.OriginalPath)} existed in both places after an interrupted " +
-                        "move. The original was kept.");
                     break;
 
-                case (false, false):
+                case ReconcileAction.MarkMissing:
                     _journal.MarkFailed(entry.Id, "the file is in neither location");
-                    _log.Warn("Sentinel",
-                        $"{Path.GetFileName(entry.OriginalPath)} is in neither its original location nor " +
-                        "quarantine. Something else moved or deleted it.");
                     break;
             }
+
+            var message = QuarantineReconciler.Describe(action, name);
+
+            if (action == ReconcileAction.MarkMissing)
+                _log.Warn("Sentinel", message);
+            else
+                _log.Info("Sentinel", message);
         }
     }
 
