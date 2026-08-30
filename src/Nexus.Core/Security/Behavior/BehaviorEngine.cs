@@ -1,0 +1,303 @@
+namespace Nexus.Core.Security.Behavior;
+
+/// <summary>What the behavioural engine noticed about one process launch.</summary>
+public sealed record BehaviorFinding
+{
+    public required ScanTarget Target { get; init; }
+    public required IReadOnlyList<SecuritySignal> Signals { get; init; }
+    public required ProcessStartEvent Trigger { get; init; }
+
+    /// <summary>The strongest weight present, for sorting an alert list.</summary>
+    public SignalWeight Severity => Signals.Count == 0
+        ? SignalWeight.Informational
+        : Signals.Max(s => s.Weight);
+}
+
+/// <summary>
+/// Watches process launches and reports the ones whose shape is worth a human look.
+///
+/// Pure and synchronous by design: it takes events in, returns findings out, and
+/// touches nothing. The ETW plumbing that feeds it lives in the App layer, which
+/// keeps every rule here unit-testable on any OS.
+///
+/// It remembers a bounded amount of process ancestry so it can answer "what launched
+/// this?" even when the parent has already exited — the interesting case, since
+/// droppers usually do.
+/// </summary>
+public sealed class BehaviorEngine
+{
+    /// <summary>Ancestry beyond this many live processes is dropped oldest-first.
+    /// A machine under a fork bomb must not also run Sentinel out of memory.</summary>
+    public const int MaxTrackedProcesses = 4096;
+
+    private sealed record TrackedProcess(int Pid, int ParentPid, string ImagePath, DateTimeOffset StartedAt);
+
+    private readonly Dictionary<int, TrackedProcess> _live = new();
+    private readonly Queue<int> _insertionOrder = new();
+    private readonly object _gate = new();
+
+    /// <summary>Record a launch and report anything notable about it.</summary>
+    public BehaviorFinding? Observe(ProcessStartEvent evt)
+    {
+        Track(evt);
+
+        var signals = new List<SecuritySignal>();
+
+        AddMasqueradeSignal(evt, signals);
+        AddLolBinSignals(evt, signals);
+        AddParentChildSignals(evt, signals);
+        AddLocationSignal(evt, signals);
+        AddCommandLineSignals(evt, signals);
+        AddFileNameSignals(evt, signals);
+
+        if (signals.Count == 0)
+            return null;
+
+        return new BehaviorFinding
+        {
+            Target = ScanTarget.ForProcess(evt.Pid, evt.ImagePath),
+            Signals = signals,
+            Trigger = evt,
+        };
+    }
+
+    /// <summary>Drop a process from the ancestry map when it exits.</summary>
+    public void Forget(int pid)
+    {
+        lock (_gate)
+        {
+            _live.Remove(pid);
+        }
+    }
+
+    /// <summary>The chain of images from this process up to the root, nearest first.
+    /// Useful for explaining a finding ("Word → cmd → powershell").</summary>
+    public IReadOnlyList<string> AncestryOf(int pid)
+    {
+        lock (_gate)
+        {
+            var chain = new List<string>();
+            var seen = new HashSet<int>();
+            int current = pid;
+
+            // PID reuse can in principle form a cycle; `seen` makes that terminate.
+            while (_live.TryGetValue(current, out var tracked) && seen.Add(current))
+            {
+                chain.Add(PathHelpers.FileName(tracked.ImagePath));
+                current = tracked.ParentPid;
+                if (current <= 0)
+                    break;
+            }
+
+            return chain;
+        }
+    }
+
+    private void Track(ProcessStartEvent evt)
+    {
+        lock (_gate)
+        {
+            _live[evt.Pid] = new TrackedProcess(evt.Pid, evt.ParentPid, evt.ImagePath, evt.At);
+            _insertionOrder.Enqueue(evt.Pid);
+
+            while (_insertionOrder.Count > MaxTrackedProcesses)
+            {
+                int oldest = _insertionOrder.Dequeue();
+                // Only evict if it is still the same generation we queued.
+                if (_live.TryGetValue(oldest, out var tracked) && tracked.Pid == oldest)
+                    _live.Remove(oldest);
+            }
+        }
+    }
+
+    /// <summary>A system binary running from the wrong directory is not that binary.</summary>
+    private static void AddMasqueradeSignal(ProcessStartEvent evt, List<SecuritySignal> signals)
+    {
+        if (!BehaviorCatalog.SystemImageHomes.TryGetValue(evt.ImageName, out var expectedHome))
+            return;
+
+        // SysWOW64 is the legitimate 32-bit twin of System32.
+        bool atHome = PathHelpers.IsUnder(evt.ImagePath, expectedHome)
+                      || (expectedHome.EndsWith("System32", StringComparison.OrdinalIgnoreCase)
+                          && PathHelpers.IsUnder(evt.ImagePath, @"C:\Windows\SysWOW64"));
+
+        if (atHome)
+            return;
+
+        signals.Add(new SecuritySignal(
+            SignalSource.Behavior,
+            SignalWeight.Strong,
+            "beh-masquerade",
+            $"{evt.ImageName} is a Windows system program, but this copy ran from " +
+            $"{PathHelpers.DirectoryOf(evt.ImagePath)} instead of {expectedHome}. " +
+            "Malware often takes a system program's name to look legitimate."));
+    }
+
+    private static void AddLolBinSignals(ProcessStartEvent evt, List<SecuritySignal> signals)
+    {
+        var commandLine = evt.CommandLine.ToLowerInvariant();
+
+        foreach (var rule in BehaviorCatalog.LolBins)
+        {
+            if (!string.Equals(rule.Image, evt.ImageName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var matched = rule.AbusePatterns
+                .Where(pattern => commandLine.Contains(pattern, StringComparison.Ordinal))
+                .ToArray();
+
+            if (matched.Length == 0)
+                continue;
+
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                rule.Weight,
+                "beh-lolbin-" + rule.Image.Replace(".exe", "", StringComparison.OrdinalIgnoreCase),
+                rule.Explanation + $" (matched: {string.Join(", ", matched)})"));
+        }
+    }
+
+    private static void AddParentChildSignals(ProcessStartEvent evt, List<SecuritySignal> signals)
+    {
+        if (evt.ParentImageName.Length == 0)
+            return;
+
+        if (BehaviorCatalog.DocumentHosts.Contains(evt.ParentImageName)
+            && BehaviorCatalog.ShellsAndInterpreters.Contains(evt.ImageName))
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                SignalWeight.Strong,
+                "beh-document-spawned-shell",
+                $"{evt.ParentImageName} started {evt.ImageName}. Documents do not normally " +
+                "launch command interpreters; this is how macro-based attacks begin."));
+        }
+    }
+
+    private static void AddLocationSignal(ProcessStartEvent evt, List<SecuritySignal> signals)
+    {
+        foreach (var (segment, description) in BehaviorCatalog.UnusualExecutionLocations)
+        {
+            if (!PathHelpers.ContainsSegment(evt.ImagePath, segment))
+                continue;
+
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                SignalWeight.Weak,
+                "beh-unusual-location",
+                $"{evt.ImageName} ran from {description}. Installers and portable tools do " +
+                "this legitimately, so on its own it means little."));
+            return; // one location signal is enough
+        }
+    }
+
+    private static void AddCommandLineSignals(ProcessStartEvent evt, List<SecuritySignal> signals)
+    {
+        if (evt.CommandLine.Length == 0)
+            return;
+
+        if (LooksBase64Encoded(evt.CommandLine, out int blobLength))
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                SignalWeight.Moderate,
+                "beh-encoded-commandline",
+                $"{evt.ImageName} was started with a {blobLength}-character encoded blob on its " +
+                "command line, which hides what it was actually told to do."));
+        }
+
+        if (evt.CommandLine.Length > 2000)
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                SignalWeight.Weak,
+                "beh-huge-commandline",
+                $"{evt.ImageName} was started with an unusually long command line " +
+                $"({evt.CommandLine.Length} characters), which is often obfuscation."));
+        }
+    }
+
+    private static void AddFileNameSignals(ProcessStartEvent evt, List<SecuritySignal> signals)
+    {
+        if (HasDeceptiveDoubleExtension(evt.ImageName, out var pretendExtension))
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                SignalWeight.Strong,
+                "beh-double-extension",
+                $"{evt.ImageName} is a program named to look like a {pretendExtension} document. " +
+                "This is a deliberate attempt to be double-clicked by mistake."));
+        }
+
+        if (evt.ImageName.Any(char.IsControl)
+            || evt.ImageName.Contains('\u202E')) // right-to-left override
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.Behavior,
+                SignalWeight.Strong,
+                "beh-name-trickery",
+                $"The file name of {evt.Pid} contains invisible characters used to disguise " +
+                "the real extension."));
+        }
+    }
+
+    /// <summary>
+    /// True when the command line carries a long run of base64. Deliberately
+    /// conservative: short base64-looking tokens appear in ordinary paths and GUIDs.
+    /// </summary>
+    public static bool LooksBase64Encoded(string commandLine, out int blobLength)
+    {
+        const int minimumBlob = 40;
+        blobLength = 0;
+        int run = 0;
+
+        foreach (char c in commandLine)
+        {
+            bool isBase64Char = char.IsAsciiLetterOrDigit(c) || c is '+' or '/' or '=';
+            if (isBase64Char)
+            {
+                run++;
+                if (run > blobLength)
+                    blobLength = run;
+            }
+            else
+            {
+                run = 0;
+            }
+        }
+
+        return blobLength >= minimumBlob;
+    }
+
+    /// <summary>Detects "invoice.pdf.exe" — a document extension followed by an
+    /// executable one.</summary>
+    public static bool HasDeceptiveDoubleExtension(string fileName, out string pretendExtension)
+    {
+        pretendExtension = "";
+
+        string[] documentExtensions =
+            [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".jpg", ".jpeg", ".png", ".zip", ".rar"];
+        string[] executableExtensions =
+            [".exe", ".scr", ".com", ".pif", ".bat", ".cmd", ".js", ".vbs", ".hta", ".lnk"];
+
+        var lower = fileName.ToLowerInvariant();
+
+        foreach (var executable in executableExtensions)
+        {
+            if (!lower.EndsWith(executable, StringComparison.Ordinal))
+                continue;
+
+            var stem = lower[..^executable.Length];
+            foreach (var document in documentExtensions)
+            {
+                if (!stem.EndsWith(document, StringComparison.Ordinal))
+                    continue;
+
+                pretendExtension = document;
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

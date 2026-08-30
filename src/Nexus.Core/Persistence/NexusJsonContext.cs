@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Nexus.Core.GameMode;
 using Nexus.Core.Models;
+using Nexus.Core.Security;
 
 namespace Nexus.Core.Persistence;
 
@@ -14,6 +15,9 @@ namespace Nexus.Core.Persistence;
 [JsonSerializable(typeof(IntendedState))]
 [JsonSerializable(typeof(Tweaks.TweaksState))]
 [JsonSerializable(typeof(DnsBackupState))]
+[JsonSerializable(typeof(TrustStoreState))]
+[JsonSerializable(typeof(QuarantineState))]
+[JsonSerializable(typeof(VerdictCacheState))]
 public sealed partial class NexusJsonContext : JsonSerializerContext
 {
 }
