@@ -200,7 +200,7 @@ blocklisted kernel driver), "AI" auto-tuning (wrapper over existing tweaks).
 
 ## Stage 8 — Sentinel (advisory security) and the measurement layer
 
-`dotnet build`: clean, 0 warnings (warnings are errors). `dotnet test`: 355/355.
+`dotnet build`: clean, 0 warnings (warnings are errors). `dotnet test`: 416/416.
 Single-file publish re-verified — and it now produces **two** binaries,
 `Nexus.exe` (63 MB) plus `Nexus.Scanner.exe` (11.6 MB, self-contained and
 trimmed), with the publish failing outright if the scanner is absent.
@@ -251,10 +251,27 @@ binary), the Defender query shape — which is how the non-elevated placeholder
 behaviour was found — and the TCP table P/Invoke, cross-checked against `netstat`
 because a port byte-order bug is silently wrong rather than obviously broken.
 
+### Moved into Core specifically so it could be tested
+
+A later review pass found several decisions living in `Nexus.App`, where the test
+project cannot reach them — and every one had a plausible failure mode:
+
+- **`ArchiveInspector`** — the zip-bomb, traversal and entry limits. Security
+  controls against an attacker-controlled file that nobody had checked.
+- **`ScanTargeting`** — unquoted command-line parsing (tested against the unquoted
+  service path hijack it exists to expose), the noise-directory filter, and Defender
+  exclusion breadth.
+- **`QuarantineReconciler`** — what an interrupted move actually left behind. This
+  runs after a crash or power cut and its only job is to not lose a user file.
+- **`SingleFlightGate`** — the check-then-assign guard that had a real race in it.
+
+The App classes kept only what genuinely belongs to them: reading the registry,
+expanding environment variables, and asking the disk what exists.
+
 ### Not testable here, and why
 
-`SentinelResetService`, `RansomwareGuardService` and `ScheduledScanService` live in
-`Nexus.App`, which the test project does not reference (it references `Core` only,
+`SentinelResetService`, `RansomwareGuardService` and `ScheduledScanService` still
+live in `Nexus.App`, which the test project does not reference (it references `Core` only,
 so the suite stays runnable off-Windows). Their logic was kept as thin as possible
 for that reason — the decisions live in Core, these classes are plumbing. The one
 that genuinely deserves a test and cannot have one here is the restore-defaults
