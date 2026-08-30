@@ -579,8 +579,40 @@
 
                     <GroupBox Header="Ransomware watch">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap"
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
                                        Text="Nexus plants hidden tripwire files in your Documents, Pictures, Videos, Music and Desktop folders, and watches for the pattern an encryption run makes — many documents rewritten at once, everything renamed to one new extension, or a ransom note appearing. Nothing on your machine has a reason to touch a tripwire file, so anything that does gets you an immediate warning. Nexus will not stop the program: it cannot do that reliably without a kernel driver, and it would rather tell you clearly than half-block it."/>
+                            <Button Content="That was me — reset the watch" HorizontalAlignment="Left"
+                                    Command="{Binding DismissRansomwareAlarmCommand}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Text="Restoring a backup or bulk-converting photos looks the same as the start of an encryption run, and only you know which it was. Use this instead of switching the whole thing off after one false alarm."/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Who is talking to the internet">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="A snapshot of established connections, taken when you press &quot;Check connections&quot; above. It is not a running record — something that connects and disconnects between checks will not appear here."/>
+                            <ItemsControl ItemsSource="{Binding Connections}" MaxHeight="220">
+                                <ItemsControl.Template>
+                                    <ControlTemplate>
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter/>
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,2">
+                                            <TextBlock Width="170" Text="{Binding ProcessName}" VerticalAlignment="Center"/>
+                                            <TextBlock Width="60" Style="{StaticResource DimText}" VerticalAlignment="Center"
+                                                       Text="{Binding Pid, StringFormat=pid {0}}"/>
+                                            <TextBlock VerticalAlignment="Center">
+                                                <Run Text="{Binding RemoteAddress, Mode=OneWay}"/><Run Text=":"/><Run Text="{Binding RemotePort, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </GroupBox>
 

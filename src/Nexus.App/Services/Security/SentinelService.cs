@@ -44,6 +44,7 @@ public sealed class SentinelService : IDisposable
     private readonly TrustStore _trust;
     private readonly VerdictCache _cache;
     private readonly RansomwareGuardService _ransomware;
+    private readonly MassChangeDetector _massChange;
     private readonly DefenderHealthService _defender;
     private readonly NetworkMonitorService _network;
     private readonly SettingsService _settings;
@@ -71,6 +72,7 @@ public sealed class SentinelService : IDisposable
         TrustStore trust,
         VerdictCache cache,
         RansomwareGuardService ransomware,
+        MassChangeDetector massChange,
         DefenderHealthService defender,
         NetworkMonitorService network,
         SettingsService settings)
@@ -85,6 +87,7 @@ public sealed class SentinelService : IDisposable
         _trust = trust;
         _cache = cache;
         _ransomware = ransomware;
+        _massChange = massChange;
         _defender = defender;
         _network = network;
         _settings = settings;
@@ -300,7 +303,7 @@ public sealed class SentinelService : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (!IsWorthScanning(file))
+                if (IsNoiseDirectory(file) || !IsWorthScanning(file))
                     continue;
 
                 yield return await ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
@@ -319,6 +322,32 @@ public sealed class SentinelService : IDisposable
     /// library to conclude "unknown" 40,000 times wastes their disk and teaches them
     /// the report is noise.
     /// </summary>
+    /// <summary>
+    /// Directories that are enormous, machine-generated, and not how anything gets
+    /// executed.
+    ///
+    /// A repository's .git folder holds thousands of extensionless object files;
+    /// node_modules holds hundreds of thousands of small ones. Hashing all of them
+    /// and shipping each through the worker turns "scan this folder" into an
+    /// afternoon, and none of it is attack surface a user would double-click. On a
+    /// developer's machine this is the difference between a usable scan and one that
+    /// gets cancelled.
+    /// </summary>
+    private static bool IsNoiseDirectory(string path)
+    {
+        // Each entry is bounded by separators on both sides so it matches a whole
+        // directory name — otherwise "\obj\" would also hit "\objects\".
+        string[] noise =
+        [
+            @"\.git\", @"\node_modules\", @"\.svn\", @"\.hg\",
+            @"\obj\", @"\bin\Debug\", @"\bin\Release\",
+            @"\.vs\", @"\.gradle\", @"\__pycache__\", @"\.venv\",
+            @"\Package Cache\", @"\WinSxS\",
+        ];
+
+        return noise.Any(segment => path.Contains(segment, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool IsWorthScanning(string path)
     {
         var extension = Path.GetExtension(path).ToLowerInvariant();
@@ -482,6 +511,20 @@ public sealed class SentinelService : IDisposable
 
     /// <summary>Who is talking to the internet right now.</summary>
     public IReadOnlyList<ConnectionInfo> GetConnections() => _network.GetConnections();
+
+    /// <summary>
+    /// Tell the ransomware watch that a burst was expected.
+    ///
+    /// Restoring a backup, bulk-converting photos or unpacking a large archive all
+    /// look like the early stage of an encryption run, and the user is the only one
+    /// who knows which it is. Without a way to say so, the honest response to a false
+    /// alarm is to turn the whole feature off.
+    /// </summary>
+    public void DismissRansomwareAlarm()
+    {
+        _massChange.Reset();
+        _log.Info("Sentinel", "Ransomware watch reset — you confirmed that file activity was expected.");
+    }
 
     /// <summary>Check current connections and report anything odd.</summary>
     public int AuditConnections()

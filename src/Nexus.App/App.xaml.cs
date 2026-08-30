@@ -118,7 +118,7 @@ public partial class App : System.Windows.Application
         var sentinel = new SentinelService(
             log, fileIdentity, signatures, reputation, scannerHost,
             autoruns, behaviourWatcher, trustStore, verdictCache,
-            ransomwareGuard, defenderHealth, networkMonitor, settings);
+            ransomwareGuard, massChange, defenderHealth, networkMonitor, settings);
 
         var tweakState = new TweakStateStore(paths);
         var registryApplier = new RegistryTweakApplier();

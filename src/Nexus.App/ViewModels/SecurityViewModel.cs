@@ -67,6 +67,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public ObservableCollection<QuarantineRow> Quarantined { get; } = [];
     public ObservableCollection<TrustedFileRow> TrustedFiles { get; } = [];
     public ObservableCollection<ProtectionComponent> Protection { get; } = [];
+    public ObservableCollection<ConnectionInfo> Connections { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -94,6 +95,7 @@ public sealed class SecurityViewModel : ViewModelBase
         ClearFindingsCommand = new RelayCommand(() => _sentinel.ClearAlerts());
         CheckDefenderCommand = new RelayCommand(CheckDefender);
         RefreshProtectionCommand = new RelayCommand(RefreshProtection);
+        DismissRansomwareAlarmCommand = new RelayCommand(DismissRansomwareAlarm);
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
@@ -135,6 +137,20 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand QuickScanCommand { get; }
     public RelayCommand RevokeTrustCommand { get; }
     public RelayCommand RefreshProtectionCommand { get; }
+    public RelayCommand DismissRansomwareAlarmCommand { get; }
+
+    /// <summary>
+    /// Tell the ransomware watch that a burst of file activity was expected.
+    ///
+    /// Restoring a backup or bulk-converting photos looks exactly like the start of
+    /// an encryption run, and only the user knows which it was. Without this, the
+    /// rational response to one false alarm is to switch the whole feature off.
+    /// </summary>
+    private void DismissRansomwareAlarm()
+    {
+        _sentinel.DismissRansomwareAlarm();
+        Status = "Ransomware watch reset. It will keep watching, starting from now.";
+    }
 
     /// <summary>Re-read which parts of the module are actually working.</summary>
     private void RefreshProtection()
@@ -210,6 +226,20 @@ public sealed class SecurityViewModel : ViewModelBase
     private void CheckConnections()
     {
         int count = _sentinel.AuditConnections();
+
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            Connections.Clear();
+
+            // Grouped by program rather than listed per socket: a browser holds
+            // dozens of connections and listing each one buries everything else.
+            foreach (var connection in _sentinel.GetConnections()
+                         .OrderBy(c => c.ProcessName, StringComparer.OrdinalIgnoreCase)
+                         .ThenBy(c => c.RemoteAddress, StringComparer.Ordinal))
+            {
+                Connections.Add(connection);
+            }
+        });
 
         Status = $"{count} established connection(s) right now. Anything unusual is in the findings " +
                  "list. This is a snapshot, not a running record — a connection that opens and closes " +
