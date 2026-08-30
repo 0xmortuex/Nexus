@@ -10,11 +10,12 @@ namespace Nexus.App.Services.Security;
 /// user maintains) and a known-bad set (an abuse.ch MalwareBazaar export, refreshed
 /// out of band).
 ///
-/// Local-only on purpose. Sending every hash on the machine to a third-party service
-/// is a privacy cost the user did not ask for, and an advisory tool that phones home
-/// about every file the user runs is worse than the problem it solves. An online
-/// lookup exists, but it is opt-in and one file at a time — see
-/// <see cref="ILookupOnline"/>.
+/// Local-only on purpose, and there is deliberately no per-file online lookup here.
+/// Sending a hash of every file the user runs to a third-party service is a privacy
+/// cost they did not ask for, and an advisory tool that phones home about your
+/// machine is worse than the problem it solves. The one network request Sentinel
+/// makes downloads a public hash list; it never uploads anything about your files.
+/// See <see cref="HashFeedImportService"/>.
 /// </summary>
 public sealed class ReputationService
 {
@@ -144,19 +145,4 @@ public sealed class ReputationService
                 "This file is in neither the known-good nor the known-bad list."),
         ];
     }
-}
-
-/// <summary>
-/// Optional per-file online reputation lookup.
-///
-/// Kept behind an interface with no implementation wired in by default: an online
-/// lookup sends a hash of the user's file to a third party, which is a disclosure,
-/// and it must stay something the user turns on for one file at a time rather than
-/// something a background scan does to everything.
-/// </summary>
-public interface ILookupOnline
-{
-    string ServiceName { get; }
-
-    Task<IReadOnlyList<SecuritySignal>> LookupAsync(string sha256, CancellationToken cancellationToken);
 }

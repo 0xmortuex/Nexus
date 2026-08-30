@@ -29,11 +29,16 @@ public sealed record HashFeedResult(bool Succeeded, int HashCount, string Messag
 /// </summary>
 public sealed class HashFeedImportService
 {
-    /// <summary>abuse.ch MalwareBazaar, recent samples. Open, no key, CC0.</summary>
-    public const string DefaultFeedUrl = "https://bazaar.abuse.ch/export/txt/sha256/recent/";
+    /// <summary>
+    /// abuse.ch MalwareBazaar, everything they have. A ~42 MB ZIP holding over a
+    /// million hashes, and the default because it is the one worth having: the
+    /// recent list is a few hundred, which will essentially never match anything a
+    /// real person downloads.
+    /// </summary>
+    public const string DefaultFeedUrl = "https://bazaar.abuse.ch/export/txt/sha256/full/";
 
-    /// <summary>The full historical export, as a ZIP. Much larger.</summary>
-    public const string FullFeedUrl = "https://bazaar.abuse.ch/export/txt/sha256/full/";
+    /// <summary>The last few days only. Small and quick, for topping up.</summary>
+    public const string RecentFeedUrl = "https://bazaar.abuse.ch/export/txt/sha256/recent/";
 
     /// <summary>A wrong or hostile URL must not be able to fill the disk.</summary>
     public const long MaxDownloadBytes = 256L * 1024 * 1024;

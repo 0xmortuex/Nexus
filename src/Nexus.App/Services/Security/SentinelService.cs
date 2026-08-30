@@ -48,6 +48,8 @@ public sealed class SentinelService : IDisposable
     private readonly DefenderHealthService _defender;
     private readonly NetworkMonitorService _network;
     private readonly SettingsService _settings;
+    private readonly KnownGoodBaselineService _baseline;
+    private readonly HashFeedImportService _feeds;
     private readonly DownloadWatcherService _downloads;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
@@ -75,7 +77,9 @@ public sealed class SentinelService : IDisposable
         MassChangeDetector massChange,
         DefenderHealthService defender,
         NetworkMonitorService network,
-        SettingsService settings)
+        SettingsService settings,
+        KnownGoodBaselineService baseline,
+        HashFeedImportService feeds)
     {
         _log = log;
         _identity = identity;
@@ -91,6 +95,8 @@ public sealed class SentinelService : IDisposable
         _defender = defender;
         _network = network;
         _settings = settings;
+        _baseline = baseline;
+        _feeds = feeds;
         _downloads = new DownloadWatcherService(log, ScanDownloadAsync);
     }
 
@@ -428,12 +434,24 @@ public sealed class SentinelService : IDisposable
                     : _downloads.IsRunning ? "Watching your Downloads folder." : "No Downloads folder found."),
 
             new ProtectionComponent(
-                "Hash reputation",
-                _reputation.HasData,
-                _reputation.HasData
-                    ? $"{_reputation.KnownGoodCount:N0} known-good, {_reputation.KnownBadCount:N0} known-bad."
-                    : "No hash data yet, so nothing can come back \"clean\" — only \"unknown\". " +
-                      "Use \"Build baseline from this PC\" above."),
+                "Known-good hashes",
+                _reputation.KnownGoodCount > 0,
+                _reputation.KnownGoodCount > 0
+                    ? $"{_reputation.KnownGoodCount:N0} hashes. Ordinary signed files can be recognised."
+                    : _baseline.BaselineExists
+                        ? "A baseline exists but has not been loaded yet — restart Nexus."
+                        : "None yet, so nothing can come back \"clean\", only \"unknown\". " +
+                          "Use \"Build baseline from this PC\" above."),
+
+            new ProtectionComponent(
+                "Known-bad hashes",
+                _reputation.KnownBadCount > 0,
+                _reputation.KnownBadCount > 0
+                    ? $"{_reputation.KnownBadCount:N0} hashes. An exact match is identified outright."
+                    : _feeds.FeedImported
+                        ? "A list was imported but has not been loaded yet — restart Nexus."
+                        : "None yet. Import one below; malware can still be caught by its behaviour " +
+                          "and structure, just not recognised by name."),
         ];
     }
 

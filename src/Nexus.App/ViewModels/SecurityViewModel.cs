@@ -159,6 +159,9 @@ public sealed class SecurityViewModel : ViewModelBase
     /// <summary>Pre-filled in the UI so the common case is one click.</summary>
     public string DefaultFeedUrl => HashFeedImportService.DefaultFeedUrl;
 
+    /// <summary>The small top-up list, for anyone who does not want a 42 MB download.</summary>
+    public string RecentFeedUrl => HashFeedImportService.RecentFeedUrl;
+
     /// <summary>
     /// Import a public known-bad hash list.
     ///
