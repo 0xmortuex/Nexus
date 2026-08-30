@@ -78,6 +78,26 @@ public static class PeHeuristics
         // is usually just an embedded PNG or an installer payload.
         bool codeIsPacked = packed.Any(s => s.IsExecutable);
 
+        // A managed assembly keeps its IL, its metadata and its embedded resources all
+        // inside .text, so entropy there measures the resources rather than any
+        // packing. System.Text.Encoding.CodePages.dll trips it on the strength of its
+        // codepage tables alone, and it is signed by Microsoft.
+        //
+        // The two other heuristics in this file already exempt managed assemblies for
+        // the same reason; this one not doing so was an inconsistency, not a decision.
+        if (image.IsManaged)
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.StaticRules,
+                SignalWeight.Informational,
+                "pe-managed-high-entropy",
+                "This .NET assembly holds compressed or encrypted data in its code section. That is " +
+                "where .NET keeps embedded resources — images, fonts, lookup tables — so it is " +
+                "normal and says nothing about whether the program is packed."));
+
+            return;
+        }
+
         signals.Add(new SecuritySignal(
             SignalSource.StaticRules,
             codeIsPacked ? SignalWeight.Moderate : SignalWeight.Weak,

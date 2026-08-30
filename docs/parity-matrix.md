@@ -104,9 +104,14 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | AV capability | Sentinel | Where / why |
 |---|---|---|
 | On-demand file scanning | ✅ | `SentinelService.ScanFileAsync`, Security tab |
-| Folder / full-disk scanning | ✅ | `ScanFolderAsync`, streams verdicts as it goes |
+| Folder / full-disk scanning | ✅ | `ScanFolderAsync` and `ScanEverythingAsync`, streaming verdicts as they are produced |
+| Scheduled scanning | ✅ | quick check every 6h; optional weekly full scan that waits for real idle and yields the moment you return |
+| Scanning running processes | ✅ | `ScanRunningProgramsAsync` — closes the gap where behaviour monitoring only sees processes as they *start* |
+| Removable-drive scanning on insert | ✅ | `RemovableDriveWatcherService`, capped at 20,000 files and says so |
+| Right-click "Scan with Nexus" | ✅ | `ShellIntegrationService` (HKCU only) + a named pipe to the running instance |
+| Scan history and exportable report | ✅ | `ScanHistory` — an empty findings list cannot otherwise be told apart from nothing having run |
 | Hash reputation (known-good / known-bad) | ✅ | `ReputationService`. Known-good is built from the machine's own validly-signed binaries; known-bad takes a MalwareBazaar export. Online lookup deliberately not wired in |
-| Authenticode signature verification | ✅ | `AuthenticodeVerifier` over WinVerifyTrust |
+| Authenticode signature verification | ✅ | `AuthenticodeVerifier` over WinVerifyTrust, including catalog-signed files — without that step most of Windows reads as unsigned |
 | PE structure heuristics | ✅ | `PeHeuristics`: entropy, W+X sections, import capability groups, packer names, entry-point sanity |
 | Byte-pattern signatures | ✅ | `PatternEngine`, `assets/patterns.txt` |
 | YARA rules | ⚠️ | `YaraEngine` over YARA-X, implemented and tested. Not bundled: the DLL is ~21 MB and rule sets carry licences. Drop both in and it activates — see docs/sentinel.md |
@@ -116,10 +121,13 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Ransomware behaviour detection | ⚠️ | shadow-copy deletion, backup deletion and recovery-disabling are detected and reported — but reported only, after the fact |
 | Script obfuscation analysis | ✅ | `ScriptAnalyzer`: PowerShell/batch/VBScript/JScript/HTA, UTF-16 aware |
 | Live script inspection (AMSI) | ❌ (not yet) | in-memory scripts need an AMSI provider DLL and an Authenticode certificate; files on disk are covered |
-| Archive inspection | ⚠️ | `ArchiveStaticEngine` reads ZIP contents with hard limits; nested archives are reported, not opened; 7z/RAR are not read |
+| Archive inspection | ⚠️ | ZIP, 7z, RAR, tar, gzip, bzip2 and xz, detected by magic bytes and read under shared limits. Nested archives are reported, not opened; password-protected ones are reported as such rather than as clean |
 | Ransomware canaries + mass-change detection | ✅ | `RansomwareGuardService` + `MassChangeDetector` |
 | Network connection monitoring | ⚠️ | `NetworkMonitorService` via GetExtendedTcpTable — a snapshot, not a running record |
-| Antivirus health / exclusion auditing | ✅ | `DefenderHealthService` — reports on Defender rather than replacing it |
+| Antivirus health / exclusion auditing | ✅ | `DefenderHealthService` — reports on Defender rather than replacing it. Nexus audits its own exclusions to the same standard |
+| Security posture check (firewall, UAC, SmartScreen) | ✅ | `SecurityPostureAudit` — also Secure Boot, drive encryption and update age. "Could not read" is never reported as "switched off" |
+| Browser extension auditing | ⚠️ | `BrowserExtensionAudit` over Chrome, Edge, Brave, Vivaldi and Opera, with capabilities in plain language. Firefox stores extensions differently and is not read |
+| Host file / DNS / proxy hijack check | ✅ | `SystemIntegrityAudit` — nothing else in the module would notice these, since no program is running |
 | Rootkit scanning | ❌ (can't) | requires kernel visibility |
 | Email / web / phishing filtering | ❌ (won't) | suite bloat, not protection. The browser and mail client already do this better |
 | Firewall, VPN, password manager | ❌ (won't) | same |
@@ -131,6 +139,7 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Explaining *why* something was flagged | ✅ | every verdict carries its signals and a score out of 100 — the module's whole point |
 | Quarantine with restore | ✅ | `QuarantineService` + write-ahead journal; moves, never deletes |
 | User allowlist | ✅ | `TrustStore`, keyed on content hash so edits revoke trust |
+| Exclusions (folders, file types) | ✅ | `ExclusionList` with a picker. Nothing is refused for being too broad, but the warning sits on the row it concerns, and an excluded file is reported as skipped rather than clean |
 | Real-time on-access blocking | ❌ (can't) | needs a filesystem minifilter driver: Microsoft altitude allocation, EV certificate, attestation signing |
 | Blocking an execution | ❌ (can't, and won't) | needs the same driver. Also the explicit design choice: Sentinel reports and leaves the decision to you |
 | Automatic quarantine / removal | ❌ (won't) | every destructive action requires a `UserConsent` token minted in a click handler. This is enforced by the type system, not by policy |

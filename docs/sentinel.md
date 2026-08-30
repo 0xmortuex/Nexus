@@ -182,13 +182,29 @@ reported rather than opened. Findings are rewritten to name the entry they came 
 
 | Mode | Covers | Triggered by |
 |---|---|---|
-| Quick check | Downloads, temp, startup folders | Button, and every few hours |
+| Quick check | Downloads, temp, startup folders | Button, and every 6 hours |
 | Scan folder | One folder, recursively | Button, or right-click a folder |
 | Scan one file | One file | Right-click a file |
-| Full scan | Every fixed drive | Button |
+| Full scan | Every fixed drive | Button, and optionally weekly when idle |
+| Running programs | The file behind every running process | Button |
 | USB check | A removable drive, capped at 20,000 files | The drive being plugged in |
 | Startup items | Run keys, services, scheduled tasks | Button |
 | Network settings | Hosts file, proxy, DNS | Button |
+| Windows security settings | Firewall, UAC, SmartScreen, Secure Boot, encryption, update age | Button |
+| Browser extensions | Chrome, Edge, Brave, Vivaldi, Opera | Button |
+
+The scheduled full scan is off unless asked for, unlike every other watch here.
+Nexus's other half exists to keep the machine responsive, and a surprise full scan
+chewing the disk is the behaviour it was built to prevent. Switched on, it waits for
+ten minutes of genuine idle, never competes with a game, and pauses the moment input
+comes back — checked every 200 files, so returning to the machine costs a second
+rather than the rest of the scan.
+
+Checking running programs exists because behaviour monitoring only ever sees a
+process as it *starts*. Everything already running when Nexus was installed has never
+been looked at, which is exactly where something that meant to stay would be sitting.
+It reads the files behind those processes; it does not read process memory or touch
+anything that is running.
 
 Removable and network drives are left out of the full scan deliberately. A full scan
 that silently pulls a terabyte across a VPN is not a feature, and a USB drive is

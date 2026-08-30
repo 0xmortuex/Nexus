@@ -216,6 +216,61 @@ public class PeAnalysisTests
             .Build()));
     }
 
+    /// <summary>
+    /// A .NET assembly keeps IL, metadata and embedded resources all inside .text, so
+    /// entropy there measures the resources. This was found on a real machine:
+    /// System.Text.Encoding.CodePages.dll scored 28/100 as Suspicious purely because
+    /// its codepage tables are dense, and it is signed by Microsoft.
+    /// </summary>
+    [Fact]
+    public void A_dotnet_assembly_with_embedded_resources_is_not_called_packed()
+    {
+        var codes = Codes(new PeBuilder()
+            .AsManaged()
+            .AsDll()
+            .AddHighEntropySection()
+            .Build());
+
+        Assert.DoesNotContain("pe-packed-code", codes);
+        Assert.Contains("pe-managed-high-entropy", codes);
+    }
+
+    [Fact]
+    public void An_unsigned_dotnet_assembly_with_dense_resources_does_not_warrant_an_alert()
+    {
+        var parsed = PeImage.TryParse(new PeBuilder()
+            .AsManaged()
+            .AsDll()
+            .AddHighEntropySection()
+            .Build());
+
+        Assert.NotNull(parsed);
+
+        SecuritySignal[] signals =
+        [
+            .. PeHeuristics.Evaluate(parsed),
+            new SecuritySignal(SignalSource.CodeSignature, SignalWeight.Weak, "sig-unsigned",
+                "No digital signature."),
+        ];
+
+        var verdict = VerdictEngine.Evaluate(new VerdictInput
+        {
+            Target = ScanTarget.ForFile(@"C:\app\System.Text.Encoding.CodePages.dll", "cafebabe"),
+            Signals = signals,
+        }, DateTimeOffset.UnixEpoch);
+
+        Assert.False(verdict.WarrantsAlert,
+            $"a .NET assembly with embedded resources scored {verdict.Score}/100 as {verdict.Level}");
+    }
+
+    /// <summary>Native code is still judged the old way; the exemption is only for
+    /// assemblies whose .text is not machine code in the first place.</summary>
+    [Fact]
+    public void A_native_binary_with_a_packed_code_section_is_still_reported()
+    {
+        Assert.Contains("pe-packed-code", Codes(new PeBuilder().AddHighEntropySection().Build()));
+    }
+
     [Fact]
     public void Managed_assemblies_skip_import_heuristics()
     {
