@@ -59,8 +59,13 @@ public sealed class ProcessDetailWatcher : IDisposable
             _running = true;
             _log.Info("Sentinel", "Watching process launches for suspicious behaviour.");
         }
-        catch (ManagementException ex)
+        catch (Exception ex)
         {
+            // Broad because this runs inside App.OnStartup: anything that escapes
+            // stops Nexus from launching at all. WMI is unavailable or broken on more
+            // machines than you would expect, and it throws several things besides
+            // ManagementException when it is. Losing behaviour monitoring is a
+            // degraded feature; failing to start is a dead product.
             _log.Warn("Sentinel",
                 $"Could not start behaviour monitoring: {ex.Message}. " +
                 "File scanning and the startup audit still work.");

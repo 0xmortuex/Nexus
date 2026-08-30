@@ -102,6 +102,13 @@ public sealed class SecurityViewModel : ViewModelBase
 
         RefreshDefenderStatus();
 
+        // Findings included: Sentinel starts before the UI is built, so anything it
+        // reports at startup — a Defender that is switched off, a leftover
+        // quarantine problem — is already in the list by the time this runs. Without
+        // this call those sit invisible until some later event happens to fire
+        // AlertsChanged, and the tab looks reassuringly empty while the log says
+        // otherwise.
+        RefreshFindings();
         RefreshQuarantine();
         RefreshTrusted();
         RefreshProtection();

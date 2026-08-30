@@ -106,10 +106,19 @@ public sealed class SentinelService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Bring the module up.
+    ///
+    /// Every step is individually guarded because this runs inside App.OnStartup:
+    /// anything that escapes here stops Nexus launching at all. A security module
+    /// that cannot start should cost the user its features, never the application —
+    /// and the optimizer half has nothing to do with any of this.
+    /// </summary>
     public void Start()
     {
-        _reputation.Load();
         var options = _settings.Current.Security;
+
+        TryStart("hash reputation", _reputation.Load);
 
         // Each feature is opt-out. Two of them are not passive — the ransomware watch
         // writes files into the user's own folders and behaviour monitoring runs a
@@ -117,26 +126,40 @@ public sealed class SentinelService : IDisposable
         if (options.BehaviourMonitoring)
         {
             _behaviour.FindingRaised += OnBehaviourFinding;
-            _behaviour.Start();
+            TryStart("behaviour monitoring", _behaviour.Start);
         }
 
         if (options.RansomwareWatch)
         {
             _ransomware.Detected += OnRansomwareFinding;
-            _ransomware.Start();
+            TryStart("the ransomware watch", _ransomware.Start);
         }
 
         if (options.ScanDownloads)
-            _downloads.Start();
+            TryStart("download checks", _downloads.Start);
 
         if (options.CheckDefenderHealth)
-            ReportDefenderHealth();
+            TryStart("the Defender health check", ReportDefenderHealth);
 
         _log.Info("Sentinel",
             _scanner.IsAvailable
                 ? "Security monitoring is on. Nexus will report what it finds and never act on its own."
                 : "Security monitoring is on, without the file scanner. Signature checks, startup " +
                   "auditing and behaviour monitoring are running.");
+    }
+
+    private void TryStart(string what, Action start)
+    {
+        try
+        {
+            start();
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("Sentinel",
+                $"Could not start {what}: {ex.Message}. The rest of Nexus is unaffected, and the " +
+                "Security tab shows which parts are running.");
+        }
     }
 
     // ---- File scanning ----
