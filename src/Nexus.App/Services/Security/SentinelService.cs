@@ -326,7 +326,7 @@ public sealed class SentinelService : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (IsNoiseDirectory(file) || !IsWorthScanning(file))
+                if (ScanTargeting.IsNoiseDirectory(file) || !ScanTargeting.IsWorthScanning(file))
                     continue;
 
                 yield return await ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
@@ -345,42 +345,6 @@ public sealed class SentinelService : IDisposable
     /// library to conclude "unknown" 40,000 times wastes their disk and teaches them
     /// the report is noise.
     /// </summary>
-    /// <summary>
-    /// Directories that are enormous, machine-generated, and not how anything gets
-    /// executed.
-    ///
-    /// A repository's .git folder holds thousands of extensionless object files;
-    /// node_modules holds hundreds of thousands of small ones. Hashing all of them
-    /// and shipping each through the worker turns "scan this folder" into an
-    /// afternoon, and none of it is attack surface a user would double-click. On a
-    /// developer's machine this is the difference between a usable scan and one that
-    /// gets cancelled.
-    /// </summary>
-    private static bool IsNoiseDirectory(string path)
-    {
-        // Each entry is bounded by separators on both sides so it matches a whole
-        // directory name — otherwise "\obj\" would also hit "\objects\".
-        string[] noise =
-        [
-            @"\.git\", @"\node_modules\", @"\.svn\", @"\.hg\",
-            @"\obj\", @"\bin\Debug\", @"\bin\Release\",
-            @"\.vs\", @"\.gradle\", @"\__pycache__\", @"\.venv\",
-            @"\Package Cache\", @"\WinSxS\",
-        ];
-
-        return noise.Any(segment => path.Contains(segment, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsWorthScanning(string path)
-    {
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-
-        return extension is ".exe" or ".dll" or ".sys" or ".scr" or ".ocx" or ".cpl" or ".drv"
-            or ".com" or ".pif" or ".bat" or ".cmd" or ".ps1" or ".psm1" or ".vbs" or ".vbe"
-            or ".js" or ".jse" or ".wsf" or ".wsh" or ".hta" or ".msi" or ".msp" or ".jar"
-            or ".lnk" or ".reg" or "";
-    }
-
     // ---- Startup / persistence audit ----
 
     /// <summary>Audit every autorun on the machine. Read-only.</summary>

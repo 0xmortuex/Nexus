@@ -52,13 +52,6 @@ public sealed class DefenderHealthService
         _log = log;
     }
 
-    /// <summary>Folders broad enough that excluding them defeats the point.</summary>
-    private static readonly string[] OverlyBroadExclusions =
-    [
-        @"c:\", @"d:\", @"c:\users", @"c:\windows", @"c:\program files",
-        @"c:\programdata", @"%userprofile%", @"%temp%", @"%appdata%",
-    ];
-
     public DefenderStatus Query()
     {
         const string script =
@@ -168,7 +161,7 @@ public sealed class DefenderHealthService
 
         foreach (var path in status.ExcludedPaths)
         {
-            if (!IsOverlyBroad(path))
+            if (!ScanTargeting.IsOverlyBroadExclusion(path))
                 continue;
 
             signals.Add(new SecuritySignal(
@@ -194,13 +187,6 @@ public sealed class DefenderHealthService
         return signals;
     }
 
-    private static bool IsOverlyBroad(string path)
-    {
-        var normalized = path.Trim().TrimEnd('\\', '*').ToLowerInvariant();
-
-        return OverlyBroadExclusions.Any(broad =>
-            string.Equals(normalized, broad.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
-    }
 
     /// <summary>A one-line summary for the Security tab header.</summary>
     public static string Describe(DefenderStatus status)

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Win32;
 using Nexus.App.Interop.Security;
 using Nexus.Core.Logging;
+using Nexus.Core.Security;
 using Nexus.Core.Security.Persistence;
 
 namespace Nexus.App.Services.Security;
@@ -395,32 +396,12 @@ public sealed class AutorunEnumerator
         && Path.GetFileName(imagePath).Equals("Nexus.exe", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Pull the executable out of a command line. Handles the quoted form and the
-    /// unquoted-with-spaces form that Windows itself resolves by probing each
-    /// prefix — the same ambiguity behind unquoted service path hijacks.
+    /// Pull the executable out of a command line, resolving unquoted paths the way
+    /// the loader does. The parsing itself lives in
+    /// <see cref="ScanTargeting.ExtractImagePath"/> in Core, where it is tested
+    /// against the unquoted service path hijack it exists to expose.
     /// </summary>
-    public static string? ExtractImagePath(string command)
-    {
-        var trimmed = Environment.ExpandEnvironmentVariables(command.Trim());
-        if (trimmed.Length == 0)
-            return null;
-
-        if (trimmed[0] == '"')
-        {
-            int closing = trimmed.IndexOf('"', 1);
-            return closing > 1 ? trimmed[1..closing] : null;
-        }
-
-        // Unquoted: try progressively longer prefixes at each space, so
-        // "C:\Program Files\App\app.exe -x" resolves rather than stopping at
-        // "C:\Program".
-        for (int i = trimmed.IndexOf(' '); i >= 0; i = trimmed.IndexOf(' ', i + 1))
-        {
-            var candidate = trimmed[..i];
-            if (File.Exists(candidate))
-                return candidate;
-        }
-
-        return File.Exists(trimmed) ? trimmed : null;
-    }
+    public static string? ExtractImagePath(string command) =>
+        ScanTargeting.ExtractImagePath(
+            Environment.ExpandEnvironmentVariables(command), File.Exists);
 }
