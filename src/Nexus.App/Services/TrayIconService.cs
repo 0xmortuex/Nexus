@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows;
+using Nexus.App.Services.Security;
 using Nexus.Core.Persistence;
 
 namespace Nexus.App.Services;
@@ -16,6 +17,8 @@ public sealed class TrayIconService : IDisposable
     private readonly PowerPlanService _power;
     private readonly GameModeService _gameMode;
     private readonly SettingsService _settings;
+    private readonly SentinelService _sentinel;
+    private readonly System.Windows.Forms.ToolStripMenuItem _securityItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _proBalanceItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _performanceItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _gameModeItem;
@@ -27,12 +30,14 @@ public sealed class TrayIconService : IDisposable
         ProBalanceService proBalance,
         PowerPlanService power,
         GameModeService gameMode,
-        SettingsService settings)
+        SettingsService settings,
+        SentinelService sentinel)
     {
         _proBalance = proBalance;
         _power = power;
         _gameMode = gameMode;
         _settings = settings;
+        _sentinel = sentinel;
 
         var menu = new System.Windows.Forms.ContextMenuStrip();
 
@@ -63,6 +68,12 @@ public sealed class TrayIconService : IDisposable
                 _gameMode.ForceForForeground();
         };
 
+        // Security is a menu entry rather than a toggle: there is nothing here to
+        // switch on or off, because Sentinel never acts. Clicking it opens the tab
+        // where the reasons are, which is the only useful action.
+        _securityItem = new System.Windows.Forms.ToolStripMenuItem("Security: checking…");
+        _securityItem.Click += (_, _) => OpenRequested?.Invoke();
+
         var open = new System.Windows.Forms.ToolStripMenuItem("Open Nexus");
         open.Click += (_, _) => OpenRequested?.Invoke();
         var exit = new System.Windows.Forms.ToolStripMenuItem("Exit");
@@ -73,6 +84,8 @@ public sealed class TrayIconService : IDisposable
         menu.Items.Add(_proBalanceItem);
         menu.Items.Add(_performanceItem);
         menu.Items.Add(_gameModeItem);
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add(_securityItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add(exit);
         menu.Opening += (_, _) => RefreshChecks();
@@ -92,6 +105,34 @@ public sealed class TrayIconService : IDisposable
             app?.Dispatcher.BeginInvoke(() =>
                 _icon.Text = _gameMode.IsActive ? $"Nexus — Game Mode: {_gameMode.ActiveGame}" : "Nexus Optimizer");
         };
+
+        // A balloon for a genuine finding only. Sentinel cannot block anything, so a
+        // notification is the entire response — which also means it has to be rare
+        // enough to still mean something when it appears.
+        _sentinel.AlertRaised += OnAlertRaised;
+    }
+
+    private void OnAlertRaised(SecurityAlert alert)
+    {
+        if (alert.Verdict.Level < Nexus.Core.Security.ThreatLevel.LikelyMalicious)
+            return;
+
+        var app = Application.Current;
+        app?.Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                _icon.BalloonTipTitle = "Nexus Security";
+                _icon.BalloonTipText = alert.Verdict.Headline + " Nothing has been changed.";
+                _icon.BalloonTipIcon = System.Windows.Forms.ToolTipIcon.Warning;
+                _icon.ShowBalloonTip(10_000);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+            {
+                // The tray icon is gone; a missed balloon is not worth crashing over,
+                // and the finding is already in the log and the Security tab.
+            }
+        });
     }
 
     private void RefreshChecks()
@@ -101,10 +142,20 @@ public sealed class TrayIconService : IDisposable
         _gameModeItem.Text = _gameMode.IsActive
             ? $"End Game Mode ({_gameMode.ActiveGame})"
             : "Game Mode for current app";
+
+        var findings = _sentinel.Alerts.Count(a => a.Verdict.WarrantsAlert);
+        var defender = _sentinel.DefenderStatus;
+
+        _securityItem.Text = defender.Available && defender.RealTimeProtectionEnabled == false
+            ? "Security: Defender is OFF"
+            : findings > 0
+                ? $"Security: {findings} finding(s) to review"
+                : "Security: nothing flagged";
     }
 
     public void Dispose()
     {
+        _sentinel.AlertRaised -= OnAlertRaised;
         _icon.Visible = false;
         _icon.Dispose();
     }

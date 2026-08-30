@@ -211,7 +211,7 @@ public partial class App : System.Windows.Application
             wizard.ShowDialog();
         };
 
-        _tray = new TrayIconService(proBalance, power, gameMode, settings);
+        _tray = new TrayIconService(proBalance, power, gameMode, settings, sentinel);
         _tray.OpenRequested += () =>
         {
             _window.Show();

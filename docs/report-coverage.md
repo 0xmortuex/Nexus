@@ -90,3 +90,18 @@ with an honest caveat. "❌ (won't)" = deliberately excluded, with the reason.
 Everything else in the report is implemented against a real, documented mechanism,
 is reversible, and is described honestly (no "massive FPS boost" language — several
 of these are explicitly labelled as measure-before-trusting or hardware-dependent).
+
+---
+
+## Security (beyond the report's scope)
+
+The report covers optimization only. Sentinel's accounting lives in
+`docs/parity-matrix.md` (detection and response, split into "can't" and "won't")
+and its design and threat model in `docs/sentinel.md`.
+
+One point of contact between the two documents is worth stating here: the report's
+optimizer mechanisms and Sentinel's detections overlap on process manipulation.
+Nexus writes IFEO keys and an elevated scheduled task, which are exactly the
+persistence mechanisms Sentinel audits. Those entries are reported in the startup
+audit and marked as created by Nexus rather than filtered out — a security tool
+that hides its own footprint teaches the user to trust a blind spot.

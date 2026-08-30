@@ -197,3 +197,66 @@ foreground boost timing, and netsh DNS changes are interop and are in the manual
 checklist. Deliberately NOT built (documented in the parity matrix): in-game FPS
 overlay (anti-cheat hazard), hardware temperature monitoring (needs a
 blocklisted kernel driver), "AI" auto-tuning (wrapper over existing tweaks).
+
+## Stage 8 — Sentinel (advisory security) and the measurement layer
+
+`dotnet build`: clean, 0 warnings (warnings are errors). `dotnet test`: 355/355.
+Single-file publish re-verified — and it now produces **two** binaries,
+`Nexus.exe` (63 MB) plus `Nexus.Scanner.exe` (11.6 MB, self-contained and
+trimmed), with the publish failing outright if the scanner is absent.
+
+### Covered by automated tests (run anywhere)
+
+Everything in `Nexus.Core` is pure and testable off-Windows, and the security
+work was deliberately shaped so that the parts worth getting right live there:
+
+- **Verdict fusion** — weights, per-source diminishing returns, the per-source cap
+  that forces corroboration, clean-vs-unknown coverage, signal ordering, and the
+  rule that a user-trusted file never raises an alert.
+- **Consent** — single-use, target-bound, action-bound, expiring, and concurrent
+  redemption. These tests are the enforcement of "Sentinel never acts on its own";
+  if they pass, the property holds by construction rather than by review.
+- **Quarantine journal** — write-ahead ordering, crash-recoverable states, the
+  refusal to restore something that was never moved.
+- **PE parsing** — every prefix of a valid file, 300 randomly mutated files, and
+  the integer-overflow case that a naive bounds check lets through.
+- **Archive inspection** — real ZIPs built in memory, including an 8 MB zip bomb,
+  traversal in both slash directions, drive-absolute and bare `..`, nested
+  archives, entry-count overflow, and traversal false-positives (`my..file.txt`).
+- **Script analysis** — obfuscation, defence tampering, download-and-run, and
+  UTF-16 decoding, which is the case that silently fails and takes every keyword
+  check with it.
+- **Ransomware detection** — canary handling, uniform-extension renames, ransom
+  notes, cooldown, window pruning, and the negative cases that matter most: a
+  document burst alone, a build-output burst, and a bulk photo rename must all
+  stay quiet.
+- **Latency statistics** — the headline test is that two runs of an *unchanged*
+  system report "no measurable difference". If that ever reports an improvement,
+  every performance claim the app makes is worthless.
+- **Throttle analysis** — power-plan vs firmware attribution, hybrid CPUs, and the
+  requirement that a firmware limit is never presented as fixable.
+- **Verdict cache** — stamp invalidation on size, timestamp, path and ruleset
+  change, plus index consistency across eviction.
+
+### Needs a real Windows machine (see `manual-test-checklist.md` §8–10)
+
+Everything that talks to the OS, which is most of the App layer:
+WinVerifyTrust results, the WMI behaviour watcher, autorun enumeration, Defender
+queries, `GetExtendedTcpTable`, FileSystemWatcher behaviour under load, canary
+planting, the latency probe against real hardware, and quarantine file moves.
+
+Three of those were spot-verified during development rather than left entirely to
+the checklist: the scanner worker end-to-end (including on the published, trimmed
+binary), the Defender query shape — which is how the non-elevated placeholder
+behaviour was found — and the TCP table P/Invoke, cross-checked against `netstat`
+because a port byte-order bug is silently wrong rather than obviously broken.
+
+### Not testable here, and why
+
+`SentinelResetService`, `RansomwareGuardService` and `ScheduledScanService` live in
+`Nexus.App`, which the test project does not reference (it references `Core` only,
+so the suite stays runnable off-Windows). Their logic was kept as thin as possible
+for that reason — the decisions live in Core, these classes are plumbing. The one
+that genuinely deserves a test and cannot have one here is the restore-defaults
+ordering, which is why it is the first item in checklist §10 and the only one
+flagged as touching user data.
