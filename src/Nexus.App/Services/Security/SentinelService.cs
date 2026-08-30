@@ -135,6 +135,13 @@ public sealed class SentinelService : IDisposable
     /// </summary>
     public async Task<Verdict> ScanFileAsync(string path, CancellationToken cancellationToken = default)
     {
+        // Cheapest possible check first: if this exact path, size and timestamp were
+        // scanned recently under the same rules, reuse that conclusion without even
+        // reading the file. Without this the cache was write-only — every rescan of a
+        // folder redid the hashing, the signature check and the worker round trip.
+        if (TryReuseCachedVerdict(path, out var cached))
+            return cached;
+
         var target = _identity.Identify(path, cancellationToken);
         var signals = new List<SecuritySignal>();
         var engines = new HashSet<SignalSource>();
@@ -170,10 +177,76 @@ public sealed class SentinelService : IDisposable
             UserTrusted = _trust.IsTrusted(target),
         }, DateTimeOffset.Now);
 
-        _cache.Store(verdict);
+        _cache.Store(verdict, path, ReadLastWriteTicks(path));
         Report(verdict, origin: "file scan");
 
         return verdict;
+    }
+
+    /// <summary>
+    /// Rebuild a verdict from the cache, or return false to do the real work.
+    ///
+    /// A cache hit deliberately does NOT re-raise an alert. The user has already been
+    /// told about this file; repeating the warning every time a folder is rescanned is
+    /// how an advisory tool trains people to ignore it. It also re-reads the trust
+    /// store rather than caching that decision, so trusting a file takes effect at
+    /// once instead of after the entry expires.
+    /// </summary>
+    private bool TryReuseCachedVerdict(string path, out Verdict verdict)
+    {
+        verdict = null!;
+
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(path);
+            if (!info.Exists)
+                return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        var entry = _cache.TryGetByStamp(
+            path, info.Length, info.LastWriteTimeUtc.Ticks, DateTimeOffset.Now);
+
+        if (entry is null)
+            return false;
+
+        var target = new ScanTarget
+        {
+            Path = path,
+            Sha256 = entry.IdentityKey.StartsWith("sha256:", StringComparison.Ordinal)
+                ? entry.IdentityKey["sha256:".Length..]
+                : null,
+            SizeBytes = entry.SizeBytes,
+        };
+
+        verdict = new Verdict
+        {
+            Target = target,
+            Level = entry.Level,
+            Score = entry.Score,
+            Signals = [],
+            EvaluatedAt = entry.EvaluatedAt,
+            UserTrusted = _trust.IsTrusted(target),
+        };
+
+        return true;
+    }
+
+    private static long ReadLastWriteTicks(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists ? info.LastWriteTimeUtc.Ticks : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     /// <summary>
@@ -203,14 +276,23 @@ public sealed class SentinelService : IDisposable
             yield break;
         }
 
-        foreach (var file in files)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            if (!IsWorthScanning(file))
-                continue;
+                if (!IsWorthScanning(file))
+                    continue;
 
-            yield return await ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
+                yield return await ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Cache writes are buffered; a cancelled scan should still keep the work
+            // it already did, or stopping a long scan halfway would throw it away.
+            _cache.Flush();
         }
     }
 
@@ -428,5 +510,6 @@ public sealed class SentinelService : IDisposable
         _ransomware.Dispose();
         _downloads.Dispose();
         _scanner.Dispose();
+        _cache.Flush();
     }
 }

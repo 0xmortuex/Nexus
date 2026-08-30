@@ -235,7 +235,9 @@ public class SecurityConsentTests : IDisposable
             Path.Combine(_dir, "cache.json"), NexusJsonContext.Default.VerdictCacheState,
             static () => new VerdictCacheState());
 
-        new VerdictCache(store, "rules-v1").Store(MaliciousVerdict(Target));
+        var cache = new VerdictCache(store, "rules-v1");
+        cache.Store(MaliciousVerdict(Target));
+        cache.Flush(); // writes are buffered; a reload only sees what reached disk
 
         Assert.NotNull(new VerdictCache(store, "rules-v1").TryGet(Target, Now));
         Assert.Null(new VerdictCache(store, "rules-v2").TryGet(Target, Now));

@@ -43,7 +43,18 @@ public sealed class RansomwareGuardService : IDisposable
     private readonly HashSet<string> _canaryPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
 
+    private System.Threading.Timer? _replantTimer;
     private bool _running;
+
+    /// <summary>
+    /// How often missing tripwires are put back.
+    ///
+    /// This matters more than it looks: deleting the canaries is the obvious first
+    /// move for anything that knows they exist, and a tripwire that stays deleted is
+    /// a tripwire that only works once. It also covers the mundane cases — a cleanup
+    /// tool, a sync client, or a curious user removing a file they did not recognise.
+    /// </summary>
+    public static readonly TimeSpan ReplantInterval = TimeSpan.FromMinutes(15);
 
     /// <summary>Raised when the pattern becomes alarming.</summary>
     public event Action<RansomwareFinding>? Detected;
@@ -108,6 +119,11 @@ public sealed class RansomwareGuardService : IDisposable
 
         if (_running)
         {
+            // Put back anything that goes missing, rather than silently losing the
+            // tripwire the first time something deletes it.
+            _replantTimer = new System.Threading.Timer(
+                _ => ReplantMissingCanaries(), null, ReplantInterval, ReplantInterval);
+
             _log.Info("Sentinel",
                 $"Ransomware watch is on for {_watchers.Count} folder(s), with {CanaryCount} tripwire " +
                 "files planted. Nexus will warn you loudly and change nothing by itself.");
@@ -312,6 +328,8 @@ public sealed class RansomwareGuardService : IDisposable
     public void Dispose()
     {
         _running = false;
+        _replantTimer?.Dispose();
+        _replantTimer = null;
 
         foreach (var watcher in _watchers)
         {
