@@ -43,6 +43,9 @@ public sealed class SentinelService : IDisposable
     private readonly SettingsService _settings;
     private readonly DownloadWatcherService _downloads;
 
+    /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
+    public const int MaxAlerts = 500;
+
     private readonly List<SecurityAlert> _alerts = [];
     private readonly object _gate = new();
 
@@ -133,14 +136,23 @@ public sealed class SentinelService : IDisposable
     /// Examine one file with every available engine and report a verdict.
     /// Reads the file; changes nothing.
     /// </summary>
-    public async Task<Verdict> ScanFileAsync(string path, CancellationToken cancellationToken = default)
+    public async Task<Verdict> ScanFileAsync(
+        string path, CancellationToken cancellationToken = default, string origin = "file scan")
     {
         // Cheapest possible check first: if this exact path, size and timestamp were
         // scanned recently under the same rules, reuse that conclusion without even
         // reading the file. Without this the cache was write-only — every rescan of a
         // folder redid the hashing, the signature check and the worker round trip.
+        //
+        // A reused verdict is still reported. Skipping that would mean a user who
+        // clears the findings list and rescans sees nothing at all, which reads as
+        // "it found nothing" rather than "it already told you". Report() dedupes, so
+        // reporting here does not produce a second entry either.
         if (TryReuseCachedVerdict(path, out var cached))
+        {
+            Report(cached, origin);
             return cached;
+        }
 
         var target = _identity.Identify(path, cancellationToken);
         var signals = new List<SecuritySignal>();
@@ -178,7 +190,7 @@ public sealed class SentinelService : IDisposable
         }, DateTimeOffset.Now);
 
         _cache.Store(verdict, path, ReadLastWriteTicks(path));
-        Report(verdict, origin: "file scan");
+        Report(verdict, origin);
 
         return verdict;
     }
@@ -353,14 +365,10 @@ public sealed class SentinelService : IDisposable
     /// </summary>
     private async Task ScanDownloadAsync(string path, CancellationToken cancellationToken)
     {
-        var verdict = await ScanFileAsync(path, cancellationToken).ConfigureAwait(false);
-
-        if (verdict.WarrantsAlert)
-        {
-            _log.Warn("Sentinel",
-                $"A file you just downloaded is worth a look before you open it. {verdict.Headline} " +
-                "Nothing has been blocked or moved.");
-        }
+        // Reports through the normal channel, tagged as a download. It used to log a
+        // second line of its own, which meant every flagged download appeared twice
+        // in the log — the sort of duplication that makes a log feel like noise.
+        await ScanFileAsync(path, cancellationToken, origin: "new download").ConfigureAwait(false);
     }
 
     // ---- Ransomware ----
@@ -476,9 +484,29 @@ public sealed class SentinelService : IDisposable
             return;
         }
 
+        // One alert object, one timestamp. Building it twice gave the copy in the
+        // list and the copy handed to subscribers different times, so the tray and
+        // the Security tab could disagree about when something was found.
+        var alert = new SecurityAlert(verdict, DateTimeOffset.Now, origin);
+
         lock (_gate)
         {
-            _alerts.Add(new SecurityAlert(verdict, DateTimeOffset.Now, origin));
+            // Deduplicate on identity. The same file gets re-examined by the
+            // scheduled check, by a folder scan, and on every cache hit, and listing
+            // it once per look would bury the findings under repeats of themselves.
+            bool alreadyListed = _alerts.Any(existing =>
+                existing.Verdict.Target.IdentityKey == verdict.Target.IdentityKey
+                && existing.Verdict.Level == verdict.Level);
+
+            if (alreadyListed)
+                return;
+
+            _alerts.Add(alert);
+
+            // Bound the list. A machine with thousands of findings has a problem no
+            // list length will fix, and an unbounded one is a slow memory leak.
+            if (_alerts.Count > MaxAlerts)
+                _alerts.RemoveRange(0, _alerts.Count - MaxAlerts);
         }
 
         var reasons = string.Join(" ", verdict.Reasons.Take(2).Select(r => r.Explanation));
@@ -489,7 +517,7 @@ public sealed class SentinelService : IDisposable
         else
             _log.Info("Sentinel", message);
 
-        AlertRaised?.Invoke(new SecurityAlert(verdict, DateTimeOffset.Now, origin));
+        AlertRaised?.Invoke(alert);
         AlertsChanged?.Invoke();
     }
 
