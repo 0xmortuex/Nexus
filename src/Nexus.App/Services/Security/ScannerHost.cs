@@ -31,6 +31,7 @@ public sealed class ScannerHost : IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private Process? _worker;
+    private IReadOnlyList<string> _engineNames = [];
     private int _restarts;
     private bool _disabled;
     private bool _disposed;
@@ -42,6 +43,59 @@ public sealed class ScannerHost : IDisposable
 
     /// <summary>False when the worker is missing or has failed too often.</summary>
     public bool IsAvailable => !_disabled && File.Exists(WorkerPath);
+
+    /// <summary>
+    /// Which engines the worker actually has, asked once at startup.
+    ///
+    /// Worth surfacing because the set is not fixed: YARA and the byte-pattern engine
+    /// each depend on files that may or may not be there, and "file scanning is on"
+    /// means something quite different with four engines than with two.
+    /// </summary>
+    public IReadOnlyList<string> EngineNames => _engineNames;
+
+    /// <summary>Run the worker's self-test to discover its engines. Best-effort.</summary>
+    public void QueryEngines()
+    {
+        if (!IsAvailable)
+            return;
+
+        try
+        {
+            using var probe = Process.Start(new ProcessStartInfo
+            {
+                FileName = WorkerPath,
+                Arguments = "--self-test",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = AppContext.BaseDirectory,
+            });
+
+            if (probe is null)
+                return;
+
+            var line = probe.StandardOutput.ReadToEnd().Trim();
+            if (!probe.WaitForExit(10_000))
+            {
+                try
+                {
+                    probe.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Already gone.
+                }
+                return;
+            }
+
+            if (line.Length > 0)
+                _engineNames = line.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            // The status panel simply shows no engine names.
+        }
+    }
 
     public static string WorkerPath =>
         Path.Combine(AppContext.BaseDirectory, "Nexus.Scanner.exe");

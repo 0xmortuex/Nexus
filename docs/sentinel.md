@@ -174,6 +174,39 @@ distrusting. So:
 - **Restore all defaults** puts quarantined files back, removes the tripwire files,
   and clears the trust store, verdict cache and saved baselines.
 
+## Turning YARA on
+
+YARA is what a byte-pattern engine cannot be: conditions over PE structure, string
+sets, wildcards, regular expressions, file-size guards. Nexus's own `PatternEngine`
+does only literal bytes and says so — this is the step up.
+
+It is implemented and tested, and needs two things dropped in beside `Nexus.exe`:
+
+1. **The engine.** Download the YARA-X C API package from
+   <https://github.com/VirusTotal/yara-x/releases> (`yara-x-capi-*-x86_64-pc-windows-msvc.zip`)
+   and put `yara_x_capi.dll` next to `Nexus.exe`. BSD-3-Clause, compatible with MIT.
+2. **Rules.** Any `.yar` or `.yara` file under `assets/yara/`. Nexus ships one
+   self-test rule file of its own; see NOTICE.md for rule sets and their licences.
+
+Verify it took: `Nexus.Scanner.exe --self-test` should list `YARA`, and scanning a
+file containing the EICAR marker should report `yara-Nexus_SelfTest_Eicar`. If the
+library loaded but rules did not compile, the worker writes the reason to standard
+error rather than silently switching the engine off.
+
+Nexus binds the C API directly rather than through a community wrapper package.
+In a security tool the supply chain is part of the threat model, and each wrapper is
+one more party whose build you are trusting inside the process that parses hostile
+files.
+
+YARA hits are weighted **Moderate**, not Strong. Rule quality varies enormously
+between collections, a hit is one opinion from one source, and the fusion engine's
+per-source cap already prevents a noisy rule set condemning a file on its own — so
+the weighting assumes nothing about whose rules are loaded.
+
+Because Sentinel reports rather than blocks, it can afford broader and noisier rule
+sets than an enforcing product could. A false positive costs a line in a report, not
+a deleted file.
+
 ## Process isolation
 
 All hostile-file parsing runs in `Nexus.Scanner.exe`, a separate process.
@@ -257,8 +290,9 @@ certainty.
 
 ## What is not built
 
-- **YARA** — reports itself unavailable. Needs a native library shipped and a rule
-  set chosen; rule sets carry licences, which is a decision rather than a default.
+- **YARA** — implemented and working, but not bundled. Two files have to be added
+  (below), because the DLL is ~21 MB and rule sets carry licences that would
+  constrain how Nexus itself may be redistributed.
 - **ML classifier** — deliberately dropped, not deferred. The tempting route is
   training on EMBER, and it is a trap: its 2,381-dimensional feature extractor would
   have to be reimplemented exactly, and any mismatch between training and inference

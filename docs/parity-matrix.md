@@ -109,7 +109,7 @@ gate this project cannot pass; "❌ (won't)" = a conscious decision not to build
 | Authenticode signature verification | ✅ | `AuthenticodeVerifier` over WinVerifyTrust |
 | PE structure heuristics | ✅ | `PeHeuristics`: entropy, W+X sections, import capability groups, packer names, entry-point sanity |
 | Byte-pattern signatures | ✅ | `PatternEngine`, `assets/patterns.txt` |
-| YARA rules | ❌ (not yet) | needs a native library shipped and a rule set chosen; reports itself unavailable rather than faking it |
+| YARA rules | ⚠️ | `YaraEngine` over YARA-X, implemented and tested. Not bundled: the DLL is ~21 MB and rule sets carry licences. Drop both in and it activates — see docs/sentinel.md |
 | ML / PE classifier | ❌ (won't) | reimplementing EMBER's feature extractor invites a silent train/inference mismatch, and the fusion cap means a single source can never be decisive anyway. See docs/sentinel.md |
 | Behaviour monitoring | ⚠️ | `BehaviorEngine` — masquerading, LOLBins, document-spawned shells, encoded command lines. WMI-polled, so very short-lived processes are missed |
 | Startup / persistence audit | ✅ | Run keys, startup folders, services, IFEO, Winlogon, AppInit_DLLs, WMI subscriptions, scheduled tasks |

@@ -4,3 +4,16 @@ publish/
 *.user
 .vs/
 .idea/
+
+# Native libraries are downloaded, not vendored. YARA-X's DLL is ~21 MB and is
+# VirusTotal's build, not ours — committing a third-party binary into a security
+# tool's repository makes it something reviewers have to trust without being able
+# to review it. See docs/sentinel.md for where to get it.
+yara_x_capi.dll
+libyara_x_capi.so
+libyara_x_capi.dylib
+
+# Third-party YARA rule sets, which carry their own licences.
+src/Nexus.App/assets/yara/*.yar
+src/Nexus.App/assets/yara/*.yara
+!src/Nexus.App/assets/yara/nexus-selftest.yar

@@ -119,6 +119,7 @@ public sealed class SentinelService : IDisposable
         var options = _settings.Current.Security;
 
         TryStart("hash reputation", _reputation.Load);
+        TryStart("the file scanner", _scanner.QueryEngines);
 
         // Each feature is opt-out. Two of them are not passive — the ransomware watch
         // writes files into the user's own folders and behaviour monitoring runs a
@@ -399,7 +400,7 @@ public sealed class SentinelService : IDisposable
                 "File scanning",
                 _scanner.IsAvailable,
                 _scanner.IsAvailable
-                    ? "Ready."
+                    ? $"Ready. Engines: {string.Join(", ", _scanner.EngineNames)}."
                     : "The scanner program is missing or stopped responding. Signature checks and the " +
                       "startup audit still work."),
 
