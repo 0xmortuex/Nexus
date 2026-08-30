@@ -1,0 +1,225 @@
+using System.IO.Compression;
+using System.Text;
+using Nexus.Core.Security;
+using Nexus.Core.Security.StaticAnalysis;
+using Xunit;
+
+namespace Nexus.Core.Tests;
+
+/// <summary>
+/// The archive limits are security controls against an attacker-controlled file, so
+/// they get tested against real archives — including ones built specifically to be
+/// hostile.
+/// </summary>
+public class ArchiveInspectorTests
+{
+    /// <summary>Builds a real ZIP in memory.</summary>
+    private static MemoryStream BuildZip(params (string Name, byte[] Content)[] entries)
+    {
+        var stream = new MemoryStream();
+
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (name, content) in entries)
+            {
+                var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
+                using var entryStream = entry.Open();
+                entryStream.Write(content);
+            }
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static byte[] Text(string value) => Encoding.UTF8.GetBytes(value);
+
+    /// <summary>Highly compressible content: expands enormously from a tiny stored size.</summary>
+    private static byte[] Compressible(int size) => new byte[size];
+
+    /// <summary>An analyser that reports one signal per entry, so requalification is visible.</summary>
+    private static IReadOnlyList<SecuritySignal> EchoAnalyser(byte[] content, string entryName) =>
+    [
+        new SecuritySignal(SignalSource.StaticRules, SignalWeight.Moderate, "echo",
+            $"Saw {content.Length} bytes."),
+    ];
+
+    private static IReadOnlyList<SecuritySignal> NullAnalyser(byte[] content, string entryName) => [];
+
+    private static string[] Codes(MemoryStream zip, ArchiveInspector.EntryAnalyser? analyser = null) =>
+        ArchiveInspector.Inspect(zip, analyser ?? NullAnalyser).Select(s => s.Code).ToArray();
+
+    // ---- Detection of the container ----
+
+    [Fact]
+    public void Zip_magic_bytes_are_recognised()
+    {
+        using var zip = BuildZip(("a.txt", Text("hello")));
+        Assert.True(ArchiveInspector.LooksLikeZip(zip.ToArray()));
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x4D, 0x5A, 0x90, 0x00 })] // a PE
+    [InlineData(new byte[] { 0x00 })]
+    [InlineData(new byte[0])]
+    public void Non_zip_input_is_not_treated_as_an_archive(byte[] bytes)
+    {
+        Assert.False(ArchiveInspector.LooksLikeZip(bytes));
+    }
+
+    [Fact]
+    public void A_corrupt_archive_is_reported_rather_than_throwing()
+    {
+        using var broken = new MemoryStream([0x50, 0x4B, 0x03, 0x04, 0xFF, 0xFF, 0xFF, 0xFF]);
+        Assert.Contains("archive-corrupt", Codes(broken));
+    }
+
+    // ---- Contents ----
+
+    [Fact]
+    public void An_ordinary_archive_of_documents_reports_nothing_alarming()
+    {
+        using var zip = BuildZip(("notes.txt", Text("hello")), ("data.csv", Text("a,b,c")));
+        Assert.Empty(Codes(zip));
+    }
+
+    [Fact]
+    public void Executables_inside_an_archive_are_listed()
+    {
+        using var zip = BuildZip(("setup.exe", Text("not really a pe")), ("readme.txt", Text("hi")));
+        Assert.Contains("archive-contains-executable", Codes(zip));
+    }
+
+    [Fact]
+    public void Findings_from_an_entry_name_the_entry_they_came_from()
+    {
+        using var zip = BuildZip(("inner/payload.bin", Text("some content here")));
+
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
+        var signal = Assert.Single(signals, s => s.Code == "archive-echo");
+
+        Assert.Contains("inner/payload.bin", signal.Explanation, StringComparison.Ordinal);
+        Assert.StartsWith("Inside the archive,", signal.Explanation, StringComparison.Ordinal);
+    }
+
+    // ---- Path traversal ----
+
+    [Theory]
+    [InlineData("../../Windows/System32/evil.dll", true)]
+    [InlineData(@"..\..\Windows\System32\evil.dll", true)]
+    [InlineData("/etc/passwd", true)]
+    [InlineData(@"C:\Windows\evil.dll", true)]
+    [InlineData("folder/../../escape.txt", true)]
+    [InlineData("..", true)]
+    [InlineData("folder/sub/file.txt", false)]
+    [InlineData("file.txt", false)]
+    [InlineData("my..file.txt", false)]
+    [InlineData("..hidden/file.txt", false)]
+    public void Traversal_paths_are_recognised_without_false_positives(string entryName, bool expected)
+    {
+        Assert.Equal(expected, ArchiveInspector.HasTraversalPath(entryName));
+    }
+
+    [Fact]
+    public void A_traversal_entry_is_reported_and_not_analysed()
+    {
+        using var zip = BuildZip(("../../escape.txt", Text("payload")));
+
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
+
+        Assert.Contains(signals, s => s.Code == "archive-path-traversal");
+        Assert.DoesNotContain(signals, s => s.Code == "archive-echo");
+    }
+
+    // ---- Zip bombs ----
+
+    [Fact]
+    public void A_hugely_compressible_entry_is_reported_and_not_expanded()
+    {
+        // 8 MB of zeroes stores in a few KB — well past the ratio limit.
+        using var zip = BuildZip(("bomb.bin", Compressible(8 * 1024 * 1024)));
+
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
+
+        Assert.Contains(signals, s => s.Code == "archive-zip-bomb");
+        Assert.DoesNotContain(signals, s => s.Code == "archive-echo");
+    }
+
+    [Fact]
+    public void Normally_compressible_content_is_not_called_a_bomb()
+    {
+        var prose = Text(string.Concat(Enumerable.Repeat(
+            "The quick brown fox jumps over the lazy dog. ", 200)));
+
+        using var zip = BuildZip(("story.txt", prose));
+
+        Assert.DoesNotContain("archive-zip-bomb", Codes(zip));
+    }
+
+    // ---- Nested archives ----
+
+    [Theory]
+    [InlineData("inner.zip")]
+    [InlineData("inner.RAR")]
+    [InlineData("payload.7z")]
+    public void Nested_archives_are_reported_rather_than_opened(string name)
+    {
+        using var zip = BuildZip((name, Text("PK not really")));
+
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
+
+        Assert.Contains(signals, s => s.Code == "archive-nested");
+        Assert.DoesNotContain(signals, s => s.Code == "archive-echo");
+    }
+
+    // ---- Limits ----
+
+    [Fact]
+    public void An_archive_with_too_many_entries_stops_and_says_so()
+    {
+        var entries = Enumerable.Range(0, ArchiveInspector.MaxEntries + 50)
+            .Select(i => ($"file{i}.txt", Text($"content {i}")))
+            .ToArray();
+
+        using var zip = BuildZip(entries);
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
+
+        Assert.Contains(signals, s => s.Code == "archive-not-fully-examined");
+        Assert.True(
+            signals.Count(s => s.Code == "archive-echo") <= ArchiveInspector.MaxEntries,
+            "more entries were analysed than the limit allows");
+    }
+
+    /// <summary>A partial look must never read as a clean bill of health.</summary>
+    [Fact]
+    public void Stopping_early_is_stated_rather_than_implied_to_be_clean()
+    {
+        var entries = Enumerable.Range(0, ArchiveInspector.MaxEntries + 5)
+            .Select(i => ($"f{i}.txt", Text("x")))
+            .ToArray();
+
+        using var zip = BuildZip(entries);
+        var signal = Assert.Single(
+            ArchiveInspector.Inspect(zip, NullAnalyser),
+            s => s.Code == "archive-not-fully-examined");
+
+        Assert.Contains("has not been cleared", signal.Explanation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Empty_entries_are_skipped()
+    {
+        using var zip = BuildZip(("empty.txt", []), ("real.txt", Text("content")));
+
+        var signals = ArchiveInspector.Inspect(zip, EchoAnalyser);
+
+        Assert.Single(signals, s => s.Code == "archive-echo");
+    }
+
+    [Fact]
+    public void A_folder_entry_does_not_produce_a_finding()
+    {
+        using var zip = BuildZip(("folder/", []));
+        Assert.Empty(Codes(zip, EchoAnalyser));
+    }
+}
