@@ -59,6 +59,10 @@ public sealed record SecurityOptions
 
     /// <summary>Check Microsoft Defender's health at startup.</summary>
     public bool CheckDefenderHealth { get; init; } = true;
+
+    /// <summary>Periodically re-check the folders where new files arrive. Never runs
+    /// while a game is active.</summary>
+    public bool ScheduledQuickScan { get; init; } = true;
 }
 
 /// <summary>Root settings document (settings.json). Extended stage by stage.</summary>

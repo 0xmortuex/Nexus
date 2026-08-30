@@ -6,6 +6,7 @@ public enum WizardStepId
     Scan,
     Recommendations,
     Games,
+    Security,
     Apply,
     Finish,
 }
@@ -30,6 +31,8 @@ public static class WizardModel
             "Ranked by real effectiveness. Uncheck anything you'd rather skip — each one shows its pros and cons."),
         new(WizardStepId.Games, "Your games",
             "Detected games and any you add get a per-game profile. Higher-rated profiles are more completely tuned."),
+        new(WizardStepId.Security, "Security",
+            "Nexus watches for malware and tells you what it finds — it never blocks or deletes on its own. One of these options writes files into your folders, so it is here rather than switched on quietly."),
         new(WizardStepId.Apply, "Apply your choices",
             "Review the summary, then apply. A System Restore point and registry backups are taken first."),
         new(WizardStepId.Finish, "All set",

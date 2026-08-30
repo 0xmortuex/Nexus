@@ -202,3 +202,52 @@ public class WizardModelTests
         });
     }
 }
+
+/// <summary>
+/// The setup wizard asks for security consent before anything is applied, because
+/// one of those options writes files into the user's own folders. Discovering that
+/// afterwards is not the same as agreeing to it.
+/// </summary>
+public class WizardSecurityStepTests
+{
+    [Fact]
+    public void The_security_step_exists()
+    {
+        Assert.Contains(WizardModel.Steps, step => step.Id == WizardStepId.Security);
+    }
+
+    [Fact]
+    public void Security_is_asked_before_anything_is_applied()
+    {
+        Assert.True(
+            WizardModel.IndexOf(WizardStepId.Security) < WizardModel.IndexOf(WizardStepId.Apply),
+            "consent must be gathered before the Apply step runs");
+    }
+
+    [Fact]
+    public void The_step_sequence_remains_navigable_end_to_end()
+    {
+        var visited = new List<WizardStepId>();
+        WizardStepId? current = WizardStepId.Welcome;
+
+        while (current is { } step)
+        {
+            visited.Add(step);
+            current = WizardModel.Next(step);
+        }
+
+        Assert.Equal(WizardModel.Steps.Count, visited.Count);
+        Assert.Equal(WizardStepId.Finish, visited[^1]);
+
+        // And back again.
+        for (int i = visited.Count - 1; i > 0; i--)
+            Assert.Equal(visited[i - 1], WizardModel.Previous(visited[i]));
+    }
+
+    [Fact]
+    public void The_security_step_copy_warns_that_files_are_written()
+    {
+        var step = WizardModel.Step(WizardStepId.Security);
+        Assert.Contains("writes files", step.Subtitle, StringComparison.OrdinalIgnoreCase);
+    }
+}

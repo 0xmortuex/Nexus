@@ -571,6 +571,8 @@
                                 <Button Content="Scan folder" Margin="0,0,8,0"
                                         Command="{Binding ScanFolderCommand}"
                                         CommandParameter="{Binding Text, ElementName=ScanFolderBox}"/>
+                                <Button Content="Quick check" Margin="0,0,8,0"
+                                        Command="{Binding QuickScanCommand}"/>
                                 <Button Content="Check startup items" Margin="0,0,8,0"
                                         Command="{Binding AuditStartupCommand}"/>
                                 <Button Content="Check connections" Margin="0,0,8,0"
@@ -806,6 +808,11 @@
                                       IsChecked="{Binding ScanDownloads}"/>
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
                                        Text="Scans programs and archives that appear in your Downloads folder, and only says something if there is something to say."/>
+
+                            <CheckBox Content="Re-check download and startup folders every few hours"
+                                      IsChecked="{Binding ScheduledQuickScan}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
+                                       Text="Checks where new files actually arrive, rather than crawling the whole disk. Never runs while a game is active, and stays silent unless it finds something."/>
 
                             <CheckBox Content="Check Microsoft Defender's health at startup"
                                       IsChecked="{Binding CheckDefenderHealth}"/>

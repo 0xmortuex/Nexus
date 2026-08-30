@@ -48,6 +48,12 @@ public sealed class SettingsViewModel : ViewModelBase
         set { _settings.Update(s => s with { Security = s.Security with { CheckDefenderHealth = value } }); OnPropertyChanged(); }
     }
 
+    public bool ScheduledQuickScan
+    {
+        get => _settings.Current.Security.ScheduledQuickScan;
+        set { _settings.Update(s => s with { Security = s.Security with { ScheduledQuickScan = value } }); OnPropertyChanged(); }
+    }
+
     // ---- ProBalance ----
     public double LoadEnterPct
     {

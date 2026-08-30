@@ -126,6 +126,30 @@
                                Visibility="{Binding Games.Count, Converter={StaticResource ZeroToVisibility}}"/>
                 </StackPanel>
 
+                <!-- Security -->
+                <StackPanel Visibility="{Binding IsSecurity, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,12"
+                               Text="Nexus includes a security module that looks for malware and explains what it finds. It never blocks, deletes or quarantines anything on its own — every action needs you to click it for that exact file. Keep Microsoft Defender switched on; this is a second opinion, not a replacement."/>
+
+                    <CheckBox Content="Watch running programs for suspicious behaviour"
+                              IsChecked="{Binding BehaviourMonitoring}"/>
+                    <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,10"
+                               Text="Notices things like a Word document launching PowerShell, or a program pretending to be a Windows system file. Costs one background subscription."/>
+
+                    <CheckBox Content="Ransomware tripwires — this one writes files into your folders"
+                              IsChecked="{Binding RansomwareWatch}"/>
+                    <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,10"
+                               Text="Nexus places small hidden files in Documents, Pictures, Videos, Music and Desktop. Nothing on your computer has any reason to touch them, so if something does, that is a strong sign a program is working through your files and you get warned within seconds. They are real files in your folders, which is why you are being asked rather than told."/>
+
+                    <CheckBox Content="Check new downloads as they arrive"
+                              IsChecked="{Binding ScanDownloads}"/>
+                    <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,0"
+                               Text="Looks at programs and archives landing in your Downloads folder, and stays quiet unless there is something worth saying."/>
+
+                    <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,12,0,0"
+                               Text="You can change any of this later in Settings, and Restore Defaults removes the tripwire files and puts back anything ever quarantined."/>
+                </StackPanel>
+
                 <!-- Apply -->
                 <StackPanel Visibility="{Binding IsApply, Converter={StaticResource BoolToVisibility}}">
                     <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap"

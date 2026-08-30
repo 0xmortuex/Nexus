@@ -48,6 +48,7 @@ public sealed class SecurityViewModel : ViewModelBase
     private readonly QuarantineService _quarantine;
     private readonly QuarantineJournal _journal;
     private readonly TrustStore _trust;
+    private readonly ScheduledScanService _scheduledScan;
 
     private CancellationTokenSource? _scanCancellation;
     private string _defenderStatus = "Checking Microsoft Defender…";
@@ -61,12 +62,14 @@ public sealed class SecurityViewModel : ViewModelBase
         SentinelService sentinel,
         QuarantineService quarantine,
         QuarantineJournal journal,
-        TrustStore trust)
+        TrustStore trust,
+        ScheduledScanService scheduledScan)
     {
         _sentinel = sentinel;
         _quarantine = quarantine;
         _journal = journal;
         _trust = trust;
+        _scheduledScan = scheduledScan;
 
         _sentinel.AlertsChanged += RefreshFindings;
         _journal.Changed += RefreshQuarantine;
@@ -80,6 +83,7 @@ public sealed class SecurityViewModel : ViewModelBase
         ClearFindingsCommand = new RelayCommand(() => _sentinel.ClearAlerts());
         CheckDefenderCommand = new RelayCommand(CheckDefender);
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
+        QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
 
         RefreshDefenderStatus();
 
@@ -113,6 +117,28 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand ClearFindingsCommand { get; }
     public RelayCommand CheckDefenderCommand { get; }
     public RelayCommand CheckConnectionsCommand { get; }
+    public RelayCommand QuickScanCommand { get; }
+
+    /// <summary>
+    /// Check the folders where new files actually arrive — Downloads, the temp
+    /// folders, the startup locations and the Desktop. Deliberately not a full-disk
+    /// scan: that takes hours, finds nothing extra, and people cancel it.
+    /// </summary>
+    private async Task QuickScanAsync()
+    {
+        IsScanning = true;
+        try
+        {
+            Status = "Checking your download, temp and startup folders…";
+            await _scheduledScan.RunNowAsync();
+            Status = "Quick check finished. Anything worth a look is in the findings list below.";
+        }
+        finally
+        {
+            IsScanning = false;
+            RefreshFindings();
+        }
+    }
 
     /// <summary>Defender is the thing that actually blocks. Sentinel reports on it
     /// rather than replacing it, so its state belongs at the top of this tab.</summary>

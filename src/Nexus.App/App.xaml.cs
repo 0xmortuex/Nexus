@@ -132,6 +132,8 @@ public partial class App : System.Windows.Application
             tweaks, debloat, settings, games, power, topology,
             throttleDetector, () => sentinel.DefenderStatus, log);
         var rating = new RatingService(tweaks, debloat, dns, settings, games, topology, () => keepAwake.Enabled);
+        var scheduledScan = new ScheduledScanService(log, sentinel, settings, () => gameMode.IsActive);
+
         var sentinelReset = new SentinelResetService(
             quarantine, quarantineJournal, trustStore, verdictCache, baselines, ransomwareGuard, log);
         var restoreDefaults = new RestoreDefaultsService(
@@ -140,7 +142,8 @@ public partial class App : System.Windows.Application
 
         _disposables.AddRange([watcher, ruleApplication, proBalance, enforcement,
             idleSaver, smartTrim, keepAwake, standby, foreground, gameMode,
-            foregroundBoost, lifecycle, limiter, balancer, timerResolution, sentinel]);
+            foregroundBoost, lifecycle, limiter, balancer, timerResolution, sentinel,
+            scheduledScan]);
 
         // ---- Crash recovery BEFORE any engine starts mutating ----
         recovery.RecoverIfNeeded();
@@ -161,6 +164,7 @@ public partial class App : System.Windows.Application
         balancer.Start();
         timerResolution.Start();
         sentinel.Start();
+        scheduledScan.Start();
 
         // ---- UI ----
         var mainViewModel = new MainViewModel(settings)
@@ -171,7 +175,7 @@ public partial class App : System.Windows.Application
             GameMode = new GameModeViewModel(gameMode, games, settings, topology.Topology.IsHybrid),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
-            Security = new SecurityViewModel(sentinel, quarantine, quarantineJournal, trustStore),
+            Security = new SecurityViewModel(sentinel, quarantine, quarantineJournal, trustStore, scheduledScan),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic, benchmark, baselines),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),
@@ -196,7 +200,7 @@ public partial class App : System.Windows.Application
 
         _showWizard = () =>
         {
-            var wizardVm = new WizardViewModel(suggestions, rating, rating.RateGames, () =>
+            var wizardVm = new WizardViewModel(suggestions, rating, rating.RateGames, settings, () =>
             {
                 settings.Update(s => s with { WizardCompleted = true });
                 mainViewModel.Dashboard.RefreshRating();

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Nexus.App.Services;
+using Nexus.Core.Persistence;
 using Nexus.Core.Advisor;
 using Nexus.Core.Suggestions;
 
@@ -62,6 +63,7 @@ public sealed class WizardViewModel : ViewModelBase
     private readonly SuggestionService _suggestions;
     private readonly RatingService _rating;
     private readonly Func<IReadOnlyList<GameRating>> _games;
+    private readonly SettingsService _settings;
     private readonly Action _onFinished;
 
     public ObservableCollection<WizardRecommendationRow> Recommendations { get; } = [];
@@ -73,11 +75,13 @@ public sealed class WizardViewModel : ViewModelBase
         SuggestionService suggestions,
         RatingService rating,
         Func<IReadOnlyList<GameRating>> games,
+        SettingsService settings,
         Action onFinished)
     {
         _suggestions = suggestions;
         _rating = rating;
         _games = games;
+        _settings = settings;
         _onFinished = onFinished;
 
         NextCommand = new RelayCommand(Next, () => !IsLastStep);
@@ -98,6 +102,7 @@ public sealed class WizardViewModel : ViewModelBase
     public bool IsScan => _step == WizardStepId.Scan;
     public bool IsRecommendations => _step == WizardStepId.Recommendations;
     public bool IsGames => _step == WizardStepId.Games;
+    public bool IsSecurity => _step == WizardStepId.Security;
     public bool IsApply => _step == WizardStepId.Apply;
     public bool IsFinish => _step == WizardStepId.Finish;
 
@@ -106,6 +111,32 @@ public sealed class WizardViewModel : ViewModelBase
     public int AfterScore { get; private set; }
     public string AfterGrade => SystemRatingEngine.GradeFor(AfterScore);
     public string ApplySummary { get; private set; } = "";
+
+    // ---- Security choices ----
+    //
+    // These are bound straight to settings rather than staged until Apply, because
+    // they are not changes to the machine — they are consent for what Nexus itself
+    // will do. Asking on the first run is the point: the ransomware watch writes
+    // files into the user's own folders, and discovering that afterwards is not the
+    // same as agreeing to it.
+
+    public bool BehaviourMonitoring
+    {
+        get => _settings.Current.Security.BehaviourMonitoring;
+        set { _settings.Update(s => s with { Security = s.Security with { BehaviourMonitoring = value } }); OnPropertyChanged(); }
+    }
+
+    public bool RansomwareWatch
+    {
+        get => _settings.Current.Security.RansomwareWatch;
+        set { _settings.Update(s => s with { Security = s.Security with { RansomwareWatch = value } }); OnPropertyChanged(); }
+    }
+
+    public bool ScanDownloads
+    {
+        get => _settings.Current.Security.ScanDownloads;
+        set { _settings.Update(s => s with { Security = s.Security with { ScanDownloads = value } }); OnPropertyChanged(); }
+    }
 
     public RelayCommand NextCommand { get; }
     public RelayCommand BackCommand { get; }
@@ -181,7 +212,7 @@ public sealed class WizardViewModel : ViewModelBase
         {
             nameof(StepTitle), nameof(StepSubtitle), nameof(StepProgress), nameof(ProgressFraction),
             nameof(IsLastStep), nameof(IsWelcome), nameof(IsScan), nameof(IsRecommendations),
-            nameof(IsGames), nameof(IsApply), nameof(IsFinish),
+            nameof(IsGames), nameof(IsSecurity), nameof(IsApply), nameof(IsFinish),
         })
             OnPropertyChanged(name);
     }
