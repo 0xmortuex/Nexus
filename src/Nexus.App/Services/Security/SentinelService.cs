@@ -55,6 +55,7 @@ public sealed class SentinelService : IDisposable
     private readonly RemovableDriveWatcherService _removableDrives;
     private readonly ScanHistory _history;
     private readonly SecurityPostureService _posture;
+    private readonly BrowserExtensionService _extensions;
 
     /// <summary>Findings kept in memory. Past this the list is a haystack, not a report.</summary>
     public const int MaxAlerts = 500;
@@ -109,6 +110,7 @@ public sealed class SentinelService : IDisposable
         _removableDrives = new RemovableDriveWatcherService(log, ScanDriveAsync);
         _history = history;
         _posture = new SecurityPostureService(log);
+        _extensions = new BrowserExtensionService(log);
     }
 
     /// <summary>The alerts raised this session, newest first.</summary>
@@ -844,6 +846,42 @@ public sealed class SentinelService : IDisposable
             $"history; {signals.Count} thing(s) worth a look.");
 
         return signals.Count;
+    }
+
+    /// <summary>
+    /// List the browser extensions installed on this machine and what each one can do.
+    ///
+    /// Extensions are the most-overlooked way a machine gets compromised without a
+    /// single suspicious file on disk: one that can read every page can read a bank
+    /// session, and people install them years ago and forget. No file scan will ever
+    /// mention it.
+    ///
+    /// Nexus never disables or removes one. The browser owns that list, editing it
+    /// behind the browser's back corrupts its own bookkeeping, and the user can remove
+    /// an extension in two clicks from a page they already know.
+    /// </summary>
+    public IReadOnlyList<BrowserExtension> AuditBrowserExtensions()
+    {
+        var extensions = _extensions.Collect();
+        var signals = BrowserExtensionAudit.Evaluate(extensions);
+
+        if (signals.Count > 0)
+        {
+            var verdict = VerdictEngine.Evaluate(new VerdictInput
+            {
+                Target = ScanTarget.ForFile("Browser extensions"),
+                Signals = signals,
+                EnginesConsulted = new HashSet<SignalSource> { SignalSource.Persistence },
+            }, DateTimeOffset.Now);
+
+            // Reported even when nothing scores, because the inventory itself is the
+            // useful part and an empty findings list would read as "nothing installed".
+            Report(verdict, origin: "browser extensions");
+        }
+
+        _log.Info("Sentinel", $"Found {extensions.Count} browser extension(s).");
+
+        return extensions;
     }
 
     // ---- Network ----

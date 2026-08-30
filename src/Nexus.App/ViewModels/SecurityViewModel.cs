@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using Nexus.App.Services.Security;
 using Nexus.Core.Security;
+using Nexus.Core.Security.Persistence;
 
 namespace Nexus.App.ViewModels;
 
@@ -41,6 +42,20 @@ public sealed class ExclusionRow
     public required string Warning { get; init; }
 
     public bool HasWarning => Warning.Length > 0;
+}
+
+/// <summary>One installed browser extension, as the UI shows it.</summary>
+public sealed class ExtensionRow
+{
+    public required string Name { get; init; }
+    public required string Where { get; init; }
+    public required string Version { get; init; }
+
+    /// <summary>What it can do, one per line, in plain language. Empty when it asks
+    /// for nothing worth mentioning.</summary>
+    public required string Capabilities { get; init; }
+
+    public bool HasCapabilities => Capabilities.Length > 0;
 }
 
 /// <summary>One quarantined file the user can put back.</summary>
@@ -85,6 +100,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public ObservableCollection<ConnectionInfo> Connections { get; } = [];
     public ObservableCollection<ExclusionRow> Exclusions { get; } = [];
     public ObservableCollection<ScanRun> History { get; } = [];
+    public ObservableCollection<ExtensionRow> Extensions { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -131,6 +147,7 @@ public sealed class SecurityViewModel : ViewModelBase
         BrowseExclusionCommand = new RelayCommand(BrowseForExclusion);
         AuditSystemSettingsCommand = new RelayCommand(AuditSystemSettings);
         AuditPostureCommand = new RelayCommand(AuditPosture);
+        AuditExtensionsCommand = new RelayCommand(AuditExtensions);
         FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
         SaveReportCommand = new RelayCommand(SaveReport);
         ClearHistoryCommand = new RelayCommand(() => { _history.Clear(); RefreshHistory(); });
@@ -187,6 +204,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand BrowseExclusionCommand { get; }
     public RelayCommand AuditSystemSettingsCommand { get; }
     public RelayCommand AuditPostureCommand { get; }
+    public RelayCommand AuditExtensionsCommand { get; }
     public RelayCommand FullScanCommand { get; }
     public RelayCommand SaveReportCommand { get; }
     public RelayCommand ClearHistoryCommand { get; }
@@ -646,6 +664,43 @@ public sealed class SecurityViewModel : ViewModelBase
         {
             Status = $"Could not save the report: {ex.Message}";
         }
+    }
+
+    // ---- Browser extensions ----
+
+    private bool _extensionsChecked;
+
+    /// <summary>True until the list has been built once, so the panel can explain
+    /// itself rather than showing an empty box that looks like a result.</summary>
+    public bool ExtensionsNotChecked => !_extensionsChecked;
+
+    private void AuditExtensions()
+    {
+        var found = _sentinel.AuditBrowserExtensions();
+
+        Extensions.Clear();
+        foreach (var extension in found.OrderBy(e => e.Where).ThenBy(e => e.DisplayName))
+        {
+            Extensions.Add(new ExtensionRow
+            {
+                Name = extension.DisplayName,
+                Where = extension.Where,
+                Version = extension.Version.Length > 0 ? "v" + extension.Version : "",
+                Capabilities = string.Join(
+                    Environment.NewLine,
+                    BrowserExtensionAudit.Capabilities(extension).Select(c => "Can " + c + ".")),
+            });
+        }
+
+        _extensionsChecked = true;
+        OnPropertyChanged(nameof(ExtensionsNotChecked));
+
+        Status = found.Count == 0
+            ? "No browser extensions found. Nexus reads Chrome, Edge, Brave, Vivaldi and Opera; " +
+              "Firefox stores its extensions differently and is not covered."
+            : $"Found {found.Count} browser extension(s), listed below with what each one is able " +
+              "to do. Nexus does not remove extensions — your browser's own extensions page does " +
+              "that in two clicks.";
     }
 
     // ---- System settings ----

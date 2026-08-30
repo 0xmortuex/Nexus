@@ -685,6 +685,9 @@
                                         Command="{Binding AuditStartupCommand}"/>
                                 <Button Content="Check connections" Margin="0,0,8,0"
                                         Command="{Binding CheckConnectionsCommand}"/>
+                                <Button Content="Check browser extensions" Margin="0,0,8,0"
+                                        ToolTip="Lists the extensions installed in Chrome, Edge, Brave, Vivaldi and Opera, and what each one is allowed to do."
+                                        Command="{Binding AuditExtensionsCommand}"/>
                                 <Button Content="Check Windows security settings" Margin="0,0,8,0"
                                         ToolTip="Firewall, UAC, SmartScreen, Secure Boot, drive encryption and Windows Update. Reports how the machine is set up; changes nothing."
                                         Command="{Binding AuditPostureCommand}"/>
@@ -693,6 +696,38 @@
                                         Command="{Binding AuditSystemSettingsCommand}"/>
                                 <Button Content="Stop" Command="{Binding CancelScanCommand}"/>
                             </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Browser extensions">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="An extension that can read every page can read your bank session, and most people installed theirs years ago and forgot. Nothing on disk looks wrong, so no file scan will ever mention it. Nexus lists them and what they can do; removing one is done from your browser's own extensions page."/>
+
+                            <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,6"
+                                       Text="Not checked yet. Use &quot;Check browser extensions&quot; above."
+                                       Visibility="{Binding ExtensionsNotChecked, Converter={StaticResource BoolToVisibility}}"/>
+
+                            <ItemsControl ItemsSource="{Binding Extensions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#3A4256" BorderThickness="0,0,0,1" Padding="0,6">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Version}"
+                                                               Style="{StaticResource DimText}" Margin="8,0,0,0"/>
+                                                    <TextBlock DockPanel.Dock="Left" Text="{Binding Where}"
+                                                               Style="{StaticResource DimText}" Width="130"/>
+                                                    <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding Capabilities}" TextWrapping="Wrap"
+                                                           Style="{StaticResource DimText}" Margin="130,2,0,0"
+                                                           Visibility="{Binding HasCapabilities, Converter={StaticResource BoolToVisibility}}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </GroupBox>
 
