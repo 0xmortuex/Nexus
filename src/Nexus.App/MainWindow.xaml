@@ -543,6 +543,29 @@
                         </StackPanel>
                     </Border>
 
+                    <GroupBox Header="What is actually running">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Parts of this module can fail to start for ordinary reasons — a missing folder, WMI being unavailable, the scanner not being installed. A security tool that looks enabled while silently doing nothing is worse than one that is honestly off, so here is the real state."/>
+                            <ItemsControl ItemsSource="{Binding Protection}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel Margin="0,3">
+                                            <TextBlock Width="150" Text="{Binding Name}" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock Width="60" VerticalAlignment="Center"
+                                                       Text="{Binding Active, Converter={StaticResource BoolToOnOff}}"/>
+                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource DimText}"
+                                                       TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="Re-check" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                    Command="{Binding RefreshProtectionCommand}"/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Microsoft Defender — the part that actually blocks">
                         <StackPanel>
                             <TextBlock Text="{Binding DefenderStatus}" Style="{StaticResource DimText}"

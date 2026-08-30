@@ -148,8 +148,8 @@ public sealed class ProcessApi
             handle =>
             {
                 // When enabling efficiency mode, also tell the OS to ignore any
-                // high-resolution-timer request from this background process (report
-                // §EcoQoS) so it can't pull the whole system to a fast timer tick.
+                // high-resolution-timer request from this background process (part of
+                // EcoQoS) so it can't pull the whole system to a fast timer tick.
                 uint flags = NativeMethods.PROCESS_POWER_THROTTLING_EXECUTION_SPEED
                            | NativeMethods.PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
                 var state = new NativeMethods.PROCESS_POWER_THROTTLING_STATE

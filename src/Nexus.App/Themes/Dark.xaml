@@ -6,6 +6,7 @@
     <app:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility"/>
     <app:ZeroToVisibilityConverter x:Key="ZeroToVisibility"/>
     <app:BarsToBrushConverter x:Key="BarsToBrush"/>
+    <app:BoolToOnOffConverter x:Key="BoolToOnOff"/>
 
     <!-- Palette -->
     <Color x:Key="BgColor">#FF14161A</Color>

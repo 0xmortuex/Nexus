@@ -66,6 +66,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public ObservableCollection<FindingRow> Findings { get; } = [];
     public ObservableCollection<QuarantineRow> Quarantined { get; } = [];
     public ObservableCollection<TrustedFileRow> TrustedFiles { get; } = [];
+    public ObservableCollection<ProtectionComponent> Protection { get; } = [];
 
     public SecurityViewModel(
         SentinelService sentinel,
@@ -92,6 +93,7 @@ public sealed class SecurityViewModel : ViewModelBase
         RestoreCommand = new RelayCommand(p => Restore(p as QuarantineRow));
         ClearFindingsCommand = new RelayCommand(() => _sentinel.ClearAlerts());
         CheckDefenderCommand = new RelayCommand(CheckDefender);
+        RefreshProtectionCommand = new RelayCommand(RefreshProtection);
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
@@ -100,6 +102,7 @@ public sealed class SecurityViewModel : ViewModelBase
 
         RefreshQuarantine();
         RefreshTrusted();
+        RefreshProtection();
     }
 
     public string Status
@@ -131,6 +134,18 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand CheckConnectionsCommand { get; }
     public RelayCommand QuickScanCommand { get; }
     public RelayCommand RevokeTrustCommand { get; }
+    public RelayCommand RefreshProtectionCommand { get; }
+
+    /// <summary>Re-read which parts of the module are actually working.</summary>
+    private void RefreshProtection()
+    {
+        Application.Current?.Dispatcher.Invoke(() =>
+        {
+            Protection.Clear();
+            foreach (var component in _sentinel.ProtectionStatus())
+                Protection.Add(component);
+        });
+    }
 
     /// <summary>
     /// Withdraw a trust decision.

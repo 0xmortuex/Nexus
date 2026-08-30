@@ -5,6 +5,22 @@ using System.Windows.Media;
 
 namespace Nexus.App;
 
+/// <summary>
+/// Renders a bool as "On" / "OFF" for the security status list.
+///
+/// Uppercase on the negative deliberately: the whole point of that panel is that a
+/// component which failed to start should be hard to skim past, and lower-case "off"
+/// reads as a setting rather than a problem.
+/// </summary>
+public sealed class BoolToOnOffConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? "On" : "OFF";
+
+    public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>Visible when the bound bool is false (used for Next vs Finish).</summary>
 public sealed class InverseBoolToVisibilityConverter : IValueConverter
 {

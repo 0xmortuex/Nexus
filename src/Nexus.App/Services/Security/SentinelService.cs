@@ -12,6 +12,12 @@ namespace Nexus.App.Services.Security;
 /// <summary>An alert Sentinel wants a human to see.</summary>
 public sealed record SecurityAlert(Verdict Verdict, DateTimeOffset RaisedAt, string Origin);
 
+/// <summary>One part of the security module and whether it is actually working.</summary>
+/// <param name="Detail">Why it is off, when it is off. "Disabled in Settings" and
+/// "tried to start and failed" are very different situations and must not look the
+/// same in the UI.</param>
+public sealed record ProtectionComponent(string Name, bool Active, string Detail);
+
 /// <summary>
 /// The security module's front door: collects evidence from every engine, fuses it,
 /// and reports.
@@ -354,6 +360,63 @@ public sealed class SentinelService : IDisposable
             $"Checked {verdicts.Count} startup items; {verdicts.Count(v => v.WarrantsAlert)} worth a look.");
 
         return verdicts;
+    }
+
+    // ---- What is actually running ----
+
+    /// <summary>
+    /// The true state of each component.
+    ///
+    /// This exists because several of these can fail to start for ordinary reasons —
+    /// WMI unavailable, a redirected Documents folder, the worker missing from the
+    /// install — and until now that only appeared as one line in the log at startup.
+    /// A security tool that looks enabled while silently doing nothing is worse than
+    /// one that is honestly switched off, so the state is shown rather than assumed.
+    /// </summary>
+    public IReadOnlyList<ProtectionComponent> ProtectionStatus()
+    {
+        var options = _settings.Current.Security;
+
+        return
+        [
+            new ProtectionComponent(
+                "File scanning",
+                _scanner.IsAvailable,
+                _scanner.IsAvailable
+                    ? "Ready."
+                    : "The scanner program is missing or stopped responding. Signature checks and the " +
+                      "startup audit still work."),
+
+            new ProtectionComponent(
+                "Behaviour monitoring",
+                _behaviour.IsRunning,
+                !options.BehaviourMonitoring
+                    ? "Turned off in Settings."
+                    : _behaviour.IsRunning ? "Watching process launches." : "Could not start — see the Log tab."),
+
+            new ProtectionComponent(
+                "Ransomware watch",
+                _ransomware.IsRunning,
+                !options.RansomwareWatch
+                    ? "Turned off in Settings."
+                    : _ransomware.IsRunning
+                        ? $"{_ransomware.CanaryCount} tripwire file(s) planted."
+                        : "Could not start — see the Log tab."),
+
+            new ProtectionComponent(
+                "Download checks",
+                _downloads.IsRunning,
+                !options.ScanDownloads
+                    ? "Turned off in Settings."
+                    : _downloads.IsRunning ? "Watching your Downloads folder." : "No Downloads folder found."),
+
+            new ProtectionComponent(
+                "Hash reputation",
+                _reputation.HasData,
+                _reputation.HasData
+                    ? $"{_reputation.KnownGoodCount:N0} known-good, {_reputation.KnownBadCount:N0} known-bad."
+                    : "No hash lists supplied, so Nexus cannot recognise files by hash. See docs/sentinel.md."),
+        ];
     }
 
     // ---- Downloads ----
