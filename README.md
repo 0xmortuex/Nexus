@@ -99,6 +99,23 @@ by the automated tests versus what needs a live Windows machine.
 - Tweaks refuse to apply if their registry backup fails.
 - Debloat disables — it never deletes services or tasks.
 
+## Documentation
+
+| | |
+|---|---|
+| [docs/sentinel.md](docs/sentinel.md) | How the security module works, what it deliberately will not do, and how to turn on the optional pieces |
+| [docs/parity-matrix.md](docs/parity-matrix.md) | Honest accounting against Process Lasso, Hone and mainstream antivirus — including what is excluded and why |
+| [docs/manual-test-checklist.md](docs/manual-test-checklist.md) | First-run verification on real Windows. Weighted toward checks that must produce a *negative* result |
+| [docs/test-notes.md](docs/test-notes.md) | What automated tests cover, what needs real hardware, and what cannot be tested here |
+| [docs/report-coverage.md](docs/report-coverage.md) | Mapping to the optimization mechanisms the project set out to implement |
+| [NOTICE.md](NOTICE.md) | Third-party components and their licences. Nothing is vendored |
+
+Two conventions run through all of it. Anything Nexus cannot do is written down with
+the reason rather than left out, and the test checklists lead with the cases that
+must **fail** — a disabled component must never look like a broken one, a backup
+restore must never look like ransomware, and measuring an unchanged system twice
+must report no difference.
+
 ## What this costs
 
 Nothing, and nothing it depends on costs anything either.
