@@ -95,3 +95,13 @@ by the automated tests versus what needs a live Windows machine.
   change; crash recovery reverts it on the next start.
 - Tweaks refuse to apply if their registry backup fails.
 - Debloat disables — it never deletes services or tasks.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Detection data is kept separate from the code on purpose. The byte-pattern rules
+shipped in `assets/` are Nexus's own; the known-good baseline is generated on your
+machine and never leaves it. If you add third-party rule sets or hash feeds, check
+their licences — several widely used YARA rule collections are GPL, which would
+constrain how you redistribute a build that bundles them.

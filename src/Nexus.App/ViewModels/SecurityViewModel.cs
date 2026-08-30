@@ -57,6 +57,7 @@ public sealed class SecurityViewModel : ViewModelBase
     private readonly QuarantineJournal _journal;
     private readonly TrustStore _trust;
     private readonly ScheduledScanService _scheduledScan;
+    private readonly KnownGoodBaselineService _baseline;
 
     private CancellationTokenSource? _scanCancellation;
     private string _defenderStatus = "Checking Microsoft Defender…";
@@ -74,13 +75,15 @@ public sealed class SecurityViewModel : ViewModelBase
         QuarantineService quarantine,
         QuarantineJournal journal,
         TrustStore trust,
-        ScheduledScanService scheduledScan)
+        ScheduledScanService scheduledScan,
+        KnownGoodBaselineService baseline)
     {
         _sentinel = sentinel;
         _quarantine = quarantine;
         _journal = journal;
         _trust = trust;
         _scheduledScan = scheduledScan;
+        _baseline = baseline;
 
         _sentinel.AlertsChanged += RefreshFindings;
         _journal.Changed += RefreshQuarantine;
@@ -96,6 +99,7 @@ public sealed class SecurityViewModel : ViewModelBase
         CheckDefenderCommand = new RelayCommand(CheckDefender);
         RefreshProtectionCommand = new RelayCommand(RefreshProtection);
         DismissRansomwareAlarmCommand = new RelayCommand(DismissRansomwareAlarm);
+        BuildBaselineCommand = new RelayCommand(async _ => await BuildBaselineAsync(), _ => !IsScanning);
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
@@ -145,6 +149,41 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand RevokeTrustCommand { get; }
     public RelayCommand RefreshProtectionCommand { get; }
     public RelayCommand DismissRansomwareAlarmCommand { get; }
+    public RelayCommand BuildBaselineCommand { get; }
+
+    /// <summary>
+    /// Record every validly-signed binary on this machine as known-good.
+    ///
+    /// Without a known-good set Sentinel cannot say "clean" at all — reputation never
+    /// counts as an engine consulted, so even an ordinary signed Windows program comes
+    /// back "unknown". Shipping NIST's reference set is impractical (tens of
+    /// gigabytes), and building the list locally is smaller, tailored to this
+    /// machine's patch level, and free of licensing questions.
+    /// </summary>
+    private async Task BuildBaselineAsync()
+    {
+        IsScanning = true;
+        _scanCancellation = new CancellationTokenSource();
+
+        try
+        {
+            var progress = new Progress<string>(message => Status = message);
+            var result = await _baseline.BuildAsync(progress, _scanCancellation.Token);
+
+            Status = result.Message;
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Stopped. Any previous baseline is untouched.";
+        }
+        finally
+        {
+            IsScanning = false;
+            _scanCancellation?.Dispose();
+            _scanCancellation = null;
+            RefreshProtection();
+        }
+    }
 
     /// <summary>
     /// Tell the ransomware watch that a burst of file activity was expected.

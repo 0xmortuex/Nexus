@@ -49,7 +49,6 @@ Six signal sources feed one fusion step:
 | `Reputation` | Local known-good / known-bad SHA-256 lists |
 | `CodeSignature` | Authenticode state via WinVerifyTrust |
 | `StaticRules` | PE structure heuristics, byte-pattern signatures |
-| `MachineLearning` | PE-feature classifier (not shipped — see Assets) |
 | `Behavior` | Process launches, ransomware-shaped file activity, live connections |
 | `Persistence` | Run keys, tasks, services, IFEO, WMI, Winlogon, AppInit, Defender health |
 
@@ -209,17 +208,44 @@ that hides its own footprint teaches the user to trust a blind spot — and Nexu
 writes exactly the kind of registry keys a user should be able to see and
 recognise.
 
+## Hash reputation, and why the baseline is built locally
+
+Sentinel needs known-good data to say "clean" at all. Without it, reputation never
+counts as an engine consulted, and since `Clean` requires three engines, **every
+ordinary file comes back "unknown"** — including signed Windows binaries.
+
+The obvious source is NIST's NSRL, and it is impractical: the full reference set is
+tens of gigabytes, against a 63 MB application.
+
+So Nexus builds the list from the machine it is running on: every binary in System32
+and Program Files whose Authenticode signature is **valid and chains to a root
+Windows already trusts**. That is smaller (a couple of MB), tailored to the machine's
+actual patch level, free of licensing questions, and costs nothing to distribute.
+
+That one rule — valid signature only — is what makes it safe on a machine that is
+already compromised. Unsigned and badly-signed files are never recorded, and an
+attacker who could satisfy that check could already sign code Windows accepts, at
+which point the baseline is not the weak link. The generated file records its own
+provenance and date, because a list that silently exonerates thousands of files
+should say where it came from.
+
+For known-bad, abuse.ch's MalwareBazaar publishes a full SHA-256 export under CC0,
+with no API key. It is not bundled; drop it in as `assets/known-bad.txt`.
+
 ## Assets
 
-These are optional and live in `assets/` beside the executable, deliberately not
-in a user-writable directory:
+Optional, and living in `assets/` beside the executable — deliberately not in a
+user-writable directory, so a non-admin cannot swap the detection data:
 
 | File | Effect if missing |
 |---|---|
-| `known-good.txt` | Hash reputation cannot exonerate by hash |
+| `known-good.txt` | Curated known-good list. The locally built baseline covers this |
 | `known-bad.txt` | Hash reputation cannot identify known malware |
 | `patterns.txt` | Byte-pattern signatures are inert |
-| `pe-classifier.onnx` | Not wired up in this build |
+
+The locally built baseline lives in `%APPDATA%\Nexus\security\known-good-local.txt`,
+not in `assets/`, because it is produced at runtime and the install directory is not
+writable for a normal user.
 
 Format for the hash lists: one lowercase hex SHA-256 per line; `#` comments and
 `hash,name` exports are tolerated.
@@ -233,9 +259,15 @@ certainty.
 
 - **YARA** — reports itself unavailable. Needs a native library shipped and a rule
   set chosen; rule sets carry licences, which is a decision rather than a default.
-- **ML classifier** — reports itself unavailable. Shipping a classifier that has
-  not been evaluated against a real false-positive budget would produce
-  confident-sounding noise, which is the exact failure this design avoids.
+- **ML classifier** — deliberately dropped, not deferred. The tempting route is
+  training on EMBER, and it is a trap: its 2,381-dimensional feature extractor would
+  have to be reimplemented exactly, and any mismatch between training and inference
+  silently destroys accuracy without erroring — a confident model that is quietly
+  wrong, which is the worst failure shape available. The defensible route (training
+  on the features `PeImage` already extracts) is real work for modest gain, since the
+  fusion engine caps any single source at 60 points and PE heuristics already cover
+  the same structural ground. A permanent "unavailable" stub would have
+  misrepresented a scope decision as an unfinished feature.
 - **Online reputation lookup** — an interface with no implementation wired in.
   Sending a hash of every file on the machine to a third party is a disclosure the
   user did not ask for; if this is ever added it stays opt-in and one file at a

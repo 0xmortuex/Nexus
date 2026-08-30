@@ -1,6 +1,7 @@
 using System.IO;
 using Nexus.Core.Logging;
 using Nexus.Core.Performance;
+using Nexus.Core.Persistence;
 using Nexus.Core.Security;
 
 namespace Nexus.App.Services.Security;
@@ -29,6 +30,7 @@ public sealed class SentinelResetService
     private readonly VerdictCache _cache;
     private readonly BaselineStore _baselines;
     private readonly RansomwareGuardService _ransomware;
+    private readonly NexusPaths _paths;
     private readonly ActivityLog _log;
 
     public SentinelResetService(
@@ -38,6 +40,7 @@ public sealed class SentinelResetService
         VerdictCache cache,
         BaselineStore baselines,
         RansomwareGuardService ransomware,
+        NexusPaths paths,
         ActivityLog log)
     {
         _quarantine = quarantine;
@@ -46,6 +49,7 @@ public sealed class SentinelResetService
         _cache = cache;
         _baselines = baselines;
         _ransomware = ransomware;
+        _paths = paths;
         _log = log;
     }
 
@@ -61,7 +65,10 @@ public sealed class SentinelResetService
         // 2. The tripwires are real files in the user's own folders.
         failures.AddRange(_ransomware.RemoveCanaries());
 
-        // 3. Bookkeeping.
+        // 3. The generated known-good baseline is a real file Nexus wrote.
+        failures.AddRange(RemoveGeneratedBaseline());
+
+        // 4. Bookkeeping.
         _trust.Clear();
         _cache.Invalidate("reset");
         _baselines.Clear();
@@ -69,10 +76,27 @@ public sealed class SentinelResetService
         _log.Info("Restore",
             failures.Count == 0
                 ? "Security module reset: quarantined files restored, tripwire files removed, " +
-                  "trusted-file list and saved measurements cleared."
+                  "and the trusted-file list, known-good baseline and saved measurements cleared."
                 : $"Security module reset with {failures.Count} item(s) needing attention.");
 
         return failures;
+    }
+
+    private IReadOnlyList<string> RemoveGeneratedBaseline()
+    {
+        var path = _paths.GeneratedKnownGoodFile;
+
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+
+            return [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [$"Known-good baseline: could not remove {path} — {ex.Message}"];
+        }
     }
 
     private IReadOnlyList<string> RestoreQuarantinedFiles()

@@ -102,7 +102,8 @@ public partial class App : System.Windows.Application
         // Nexus's own IFEO keys and scheduled task) rather than being exempt from them.
         var signatures = new AuthenticodeVerifier(log);
         var fileIdentity = new FileIdentityService(log);
-        var reputation = new ReputationService(log);
+        var baselineBuilder = new KnownGoodBaselineService(log, paths, signatures, fileIdentity);
+        var reputation = new ReputationService(log, paths);
         var scannerHost = new ScannerHost(log);
         var autoruns = new AutorunEnumerator(log, signatures);
         var behaviorEngine = new BehaviorEngine();
@@ -135,7 +136,8 @@ public partial class App : System.Windows.Application
         var scheduledScan = new ScheduledScanService(log, sentinel, settings, () => gameMode.IsActive);
 
         var sentinelReset = new SentinelResetService(
-            quarantine, quarantineJournal, trustStore, verdictCache, baselines, ransomwareGuard, log);
+            quarantine, quarantineJournal, trustStore, verdictCache, baselines, ransomwareGuard,
+            paths, log);
         var restoreDefaults = new RestoreDefaultsService(
             tweaks, debloat, gameMode, recovery, power, rules, games, autostart, keepAwake, dns,
             sentinelReset, log);
@@ -175,7 +177,8 @@ public partial class App : System.Windows.Application
             GameMode = new GameModeViewModel(gameMode, games, settings, topology.Topology.IsHybrid),
             Tweaks = new TweaksViewModel(tweaks, debloat, cleaner, startup),
             Tools = new ToolsViewModel(standby, dns, settings),
-            Security = new SecurityViewModel(sentinel, quarantine, quarantineJournal, trustStore, scheduledScan),
+            Security = new SecurityViewModel(
+                sentinel, quarantine, quarantineJournal, trustStore, scheduledScan, baselineBuilder),
             Latency = new LatencyViewModel(timerResolution, bootTimer, interrupts, nic, benchmark, baselines),
             Log = new LogViewModel(log),
             Settings = new SettingsViewModel(settings, autostart, keepAwake),

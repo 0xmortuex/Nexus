@@ -149,7 +149,6 @@ public static class Program
         new ArchiveStaticEngine(),
         PatternSignatureEngine.Create(),
         YaraEngine.Create(),
-        MachineLearningEngine.Create(),
     ];
 
     /// <summary>Lets the host verify the worker actually runs before relying on it.</summary>

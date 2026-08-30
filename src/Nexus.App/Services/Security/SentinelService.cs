@@ -431,7 +431,8 @@ public sealed class SentinelService : IDisposable
                 _reputation.HasData,
                 _reputation.HasData
                     ? $"{_reputation.KnownGoodCount:N0} known-good, {_reputation.KnownBadCount:N0} known-bad."
-                    : "No hash lists supplied, so Nexus cannot recognise files by hash. See docs/sentinel.md."),
+                    : "No hash data yet, so nothing can come back \"clean\" — only \"unknown\". " +
+                      "Use \"Build baseline from this PC\" above."),
         ];
     }
 

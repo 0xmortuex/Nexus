@@ -30,6 +30,11 @@ public sealed class NexusPaths
     /// backups trees so a cleanup routine can never sweep it by accident.</summary>
     public string QuarantineDirectory => Path.Combine(Root, "quarantine");
 
+    /// <summary>Known-good hashes generated from this machine's own signed binaries.
+    /// Lives in user data rather than the assets folder because it is produced at
+    /// runtime and the install directory is not writable for a normal user.</summary>
+    public string GeneratedKnownGoodFile => Path.Combine(SecurityDirectory, "known-good-local.txt");
+
     /// <summary>Cached verdicts, keyed by content hash.</summary>
     public string VerdictCacheFile => Path.Combine(SecurityDirectory, "verdict-cache.json");
 

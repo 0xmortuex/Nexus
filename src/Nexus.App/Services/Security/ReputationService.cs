@@ -19,13 +19,15 @@ namespace Nexus.App.Services.Security;
 public sealed class ReputationService
 {
     private readonly ActivityLog _log;
+    private readonly NexusPaths _paths;
     private readonly HashSet<string> _knownGood = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _knownBad = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
 
-    public ReputationService(ActivityLog log)
+    public ReputationService(ActivityLog log, NexusPaths paths)
     {
         _log = log;
+        _paths = paths;
     }
 
     public int KnownGoodCount
@@ -61,14 +63,19 @@ public sealed class ReputationService
     /// </summary>
     public void Load()
     {
-        LoadInto(NexusPaths.KnownGoodHashFile, _knownGood, "known-good");
-        LoadInto(Path.Combine(NexusPaths.AssetsDirectory, "known-bad.txt"), _knownBad, "known-bad");
+        // Two sources for known-good: a curated list shipped with the app, and the
+        // baseline built from this machine's own validly-signed binaries. The local
+        // one matters most — without any known-good data at all, reputation never
+        // counts as an engine consulted and every ordinary file reads "unknown".
+        LoadInto(NexusPaths.KnownGoodHashFile, _knownGood, "known-good", replace: true);
+        LoadInto(_paths.GeneratedKnownGoodFile, _knownGood, "known-good (this machine)", replace: false);
+        LoadInto(Path.Combine(NexusPaths.AssetsDirectory, "known-bad.txt"), _knownBad, "known-bad", replace: true);
 
         if (!HasData)
         {
             _log.Info("Sentinel",
-                "No hash reputation lists found. Sentinel will still check signatures and behaviour, " +
-                "but it cannot recognise known files by hash until a list is supplied.");
+                "No hash reputation data yet, so files can only come back \"unknown\" rather than " +
+                "\"clean\". Build a known-good baseline from the Security tab to fix that.");
         }
         else
         {
@@ -77,36 +84,25 @@ public sealed class ReputationService
         }
     }
 
-    private void LoadInto(string path, HashSet<string> destination, string label)
+    private void LoadInto(string path, HashSet<string> destination, string label, bool replace)
     {
         if (!File.Exists(path))
             return;
 
         try
         {
-            int loaded = 0;
+            var loaded = HashListFile.Parse(File.ReadLines(path));
+
             lock (_gate)
             {
-                destination.Clear();
-                foreach (var raw in File.ReadLines(path))
-                {
-                    var line = raw.Trim();
-                    if (line.Length == 0 || line[0] == '#')
-                        continue;
+                if (replace)
+                    destination.Clear();
 
-                    // Tolerate "hash,name" and "hash name" exports.
-                    int separator = line.IndexOfAny([',', ' ', '\t']);
-                    var hash = separator > 0 ? line[..separator] : line;
-
-                    if (hash.Length == 64)
-                    {
-                        destination.Add(hash);
-                        loaded++;
-                    }
-                }
+                foreach (var hash in loaded)
+                    destination.Add(hash);
             }
 
-            _log.Info("Sentinel", $"Loaded {loaded:N0} {label} hashes from {Path.GetFileName(path)}.");
+            _log.Info("Sentinel", $"Loaded {loaded.Count:N0} {label} hashes from {Path.GetFileName(path)}.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

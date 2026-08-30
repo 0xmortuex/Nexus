@@ -566,6 +566,17 @@
                         </StackPanel>
                     </GroupBox>
 
+                    <GroupBox Header="Known-good baseline">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Text="Until Nexus knows what good looks like on this machine, it can only ever say &quot;unknown&quot; — even about ordinary signed Windows programs. This records every binary in System32 and Program Files whose digital signature is valid and trusted by Windows, so those stop being reported as unknown. Expect roughly 30,000 files and two to five minutes, depending on how much you have installed. It only ever reads, and you can stop it at any time."/>
+                            <Button Content="Build baseline from this PC" HorizontalAlignment="Left"
+                                    Command="{Binding BuildBaselineCommand}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Only files with a VALID signature are recorded, which is what stops an already-infected machine adding its own malware to the list. Anything unsigned or badly signed is skipped. Re-run it after big Windows updates. Restore Defaults deletes it."/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <GroupBox Header="Microsoft Defender — the part that actually blocks">
                         <StackPanel>
                             <TextBlock Text="{Binding DefenderStatus}" Style="{StaticResource DimText}"

@@ -81,28 +81,3 @@ public sealed class YaraEngine : IStaticEngine
 
     public IReadOnlyList<SecuritySignal> Analyse(ReadOnlySpan<byte> bytes, string path) => [];
 }
-
-/// <summary>
-/// The PE-feature classifier, when a model is present at assets/pe-classifier.onnx.
-///
-/// Also not wired up in this build. Running it needs the ONNX runtime and a model
-/// trained on a labelled corpus; shipping a classifier that has not been evaluated
-/// against a real false-positive budget would produce confident-sounding noise, which
-/// is precisely the failure mode this whole design is trying to avoid.
-/// </summary>
-public sealed class MachineLearningEngine : IStaticEngine
-{
-    private MachineLearningEngine()
-    {
-    }
-
-    public string Name => "PE classifier";
-
-    public SignalSource SignalSource => SignalSource.MachineLearning;
-
-    public bool IsAvailable => false;
-
-    public static MachineLearningEngine Create() => new();
-
-    public IReadOnlyList<SecuritySignal> Analyse(ReadOnlySpan<byte> bytes, string path) => [];
-}
