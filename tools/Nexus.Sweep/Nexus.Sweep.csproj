@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Nexus.Sweep</RootNamespace>
+    <AssemblyName>Nexus.Sweep</AssemblyName>
+
+    <!-- Windows-only APIs are the point of this tool; it never runs anywhere else. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nexus.Core\Nexus.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    The signature verifier lives in Nexus.App, which is a WPF executable and cannot be
+    referenced from a console tool. Its two interop files have no WPF dependency, so
+    they are compiled in directly. Copying them instead would let the tool drift away
+    from the code it is supposed to be measuring, which would make it worse than
+    useless: it would report confidently on behaviour the product does not have.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Nexus.App\Interop\Security\WinTrustNative.cs" />
+    <Compile Include="..\..\src\Nexus.App\Interop\Security\AuthenticodeVerifier.cs" />
+  </ItemGroup>
+
+</Project>
