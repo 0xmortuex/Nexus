@@ -123,10 +123,15 @@ public sealed class ProcessDetailWatcher : IDisposable
 
             FindingRaised?.Invoke(finding);
         }
-        catch (Exception ex) when (ex is ManagementException or InvalidCastException or FormatException)
+        catch (Exception ex)
         {
-            // A malformed or already-gone instance is routine under load; dropping
-            // one event must never take the watcher down.
+            // Broad on purpose, matching WmiProcessWatcher. This runs on a WMI
+            // callback thread, so anything that escapes here takes the whole process
+            // down — and it is not just this method's own failures at risk: raising
+            // the event runs every subscriber, up through the verdict engine and into
+            // the view-models. A malformed instance is routine under load; a bug in a
+            // subscriber should cost one event, not the application.
+            _log.Warn("Sentinel", $"Dropped a process event: {ex.Message}");
         }
     }
 
@@ -139,9 +144,10 @@ public sealed class ProcessDetailWatcher : IDisposable
 
             _engine.Forget(ToInt(instance["ProcessId"]));
         }
-        catch (Exception ex) when (ex is ManagementException or InvalidCastException)
+        catch (Exception)
         {
-            // See above.
+            // See above: never let anything escape onto the WMI callback thread.
+            // Failing to forget one PID costs a slot in a bounded map, nothing more.
         }
     }
 

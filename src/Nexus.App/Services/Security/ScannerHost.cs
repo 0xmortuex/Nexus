@@ -145,7 +145,11 @@ public sealed class ScannerHost : IDisposable
         if (_worker is { HasExited: false })
             return _worker;
 
-        if (_disabled || !File.Exists(WorkerPath))
+        // Never spawn during or after shutdown. Dispose kills the worker, which can
+        // surface inside an in-flight ScanAsync as an ObjectDisposedException — caught
+        // as InvalidOperationException, which routes into Restart() and would
+        // otherwise start a fresh worker process nobody will ever clean up.
+        if (_disposed || _disabled || !File.Exists(WorkerPath))
             return null;
 
         try

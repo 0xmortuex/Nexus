@@ -121,8 +121,9 @@ public sealed class RansomwareGuardService : IDisposable
         {
             // Put back anything that goes missing, rather than silently losing the
             // tripwire the first time something deletes it.
-            _replantTimer = new System.Threading.Timer(
-                _ => ReplantMissingCanaries(), null, ReplantInterval, ReplantInterval);
+            // Wrapped: this is a timer thread, and an escaping exception would end
+            // the process rather than skip one replant.
+            _replantTimer = new System.Threading.Timer(_ => SafeReplant(), null, ReplantInterval, ReplantInterval);
 
             _log.Info("Sentinel",
                 $"Ransomware watch is on for {_watchers.Count} folder(s), with {CanaryCount} tripwire " +
@@ -157,6 +158,18 @@ public sealed class RansomwareGuardService : IDisposable
                 // about; the watch still works there, just without a tripwire.
                 _log.Info("Sentinel", $"Could not place a tripwire file in {folder}: {ex.Message}");
             }
+        }
+    }
+
+    private void SafeReplant()
+    {
+        try
+        {
+            ReplantMissingCanaries();
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("Sentinel", $"Could not restore the tripwire files: {ex.Message}");
         }
     }
 

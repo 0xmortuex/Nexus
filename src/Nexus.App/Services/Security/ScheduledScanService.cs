@@ -1,4 +1,5 @@
 using System.IO;
+using Nexus.Core;
 using Nexus.Core.Logging;
 using Nexus.Core.Persistence;
 
@@ -37,6 +38,12 @@ public sealed class ScheduledScanService : IDisposable
     private readonly Func<bool> _isGameModeActive;
 
     private System.Threading.Timer? _timer;
+
+    // The timer and the "Quick check" button can both try to start a scan. A plain
+    // null check in front of an assignment lets both through — press the button as
+    // the timer fires and you get two concurrent scans, an orphaned cancellation
+    // source, and whichever finishes first clearing the flag for both.
+    private readonly SingleFlightGate _gate = new();
     private CancellationTokenSource? _running;
     private bool _disposed;
 
@@ -90,26 +97,37 @@ public sealed class ScheduledScanService : IDisposable
 
     private void Tick()
     {
-        if (_disposed)
-            return;
-
-        // Never compete with a game. Nexus's whole optimizer half exists to protect
-        // frame times; a scan that causes stutter is the product undermining itself.
-        if (_isGameModeActive())
+        // This runs on a timer thread, where an escaping exception ends the process.
+        // The callback itself asks another service whether a game is running, so the
+        // failure would not even be this class's own.
+        try
         {
-            _timer?.Change(PostponedRetry, Interval);
-            return;
+            if (_disposed)
+                return;
+
+            // Never compete with a game. Nexus's whole optimizer half exists to
+            // protect frame times; a scan that causes stutter is the product
+            // undermining itself.
+            if (_isGameModeActive())
+            {
+                _timer?.Change(PostponedRetry, Interval);
+                return;
+            }
+
+            _ = RunAsync();
         }
-
-        // A previous scan is still going; skip rather than stacking them up.
-        if (_running is not null)
-            return;
-
-        _ = RunAsync();
+        catch (Exception ex)
+        {
+            _log.Warn("Sentinel", $"Skipped a scheduled check: {ex.Message}");
+        }
     }
 
     private async Task RunAsync()
     {
+        // A previous scan is still going; skip rather than stacking them up.
+        if (!_gate.TryEnter())
+            return;
+
         var cancellation = new CancellationTokenSource();
         _running = cancellation;
 
@@ -164,17 +182,16 @@ public sealed class ScheduledScanService : IDisposable
         {
             _running = null;
             cancellation.Dispose();
+            _gate.Exit();
         }
     }
 
-    /// <summary>Run a quick scan now, for the button in the Security tab.</summary>
-    public Task RunNowAsync()
-    {
-        if (_running is not null)
-            return Task.CompletedTask;
-
-        return RunAsync();
-    }
+    /// <summary>
+    /// Run a quick scan now, for the button in the Security tab. Does nothing if the
+    /// scheduled scan is already running — the gate inside RunAsync decides, so the
+    /// button and the timer cannot both get in.
+    /// </summary>
+    public Task RunNowAsync() => RunAsync();
 
     public void Dispose()
     {
