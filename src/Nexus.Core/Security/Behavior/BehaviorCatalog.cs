@@ -5,11 +5,15 @@ namespace Nexus.Core.Security.Behavior;
 /// <param name="Image">Image name, lowercase.</param>
 /// <param name="AbusePatterns">Lowercase substrings; any match is suspicious.</param>
 /// <param name="Explanation">Plain language, describing what was seen — not a verdict.</param>
+/// <param name="Code">Distinguishes rules that share an image. Several binaries have
+/// more than one rule at different severities, and without this they would all report
+/// under the same code.</param>
 public sealed record LolBinRule(
     string Image,
     IReadOnlyList<string> AbusePatterns,
     string Explanation,
-    SignalWeight Weight = SignalWeight.Moderate);
+    SignalWeight Weight = SignalWeight.Moderate,
+    string? Code = null);
 
 /// <summary>
 /// The behavioural rule data: which system binaries get abused and how, which
@@ -53,15 +57,39 @@ public static class BehaviorCatalog
             "wmic.exe was used to start a process, query another machine, or delete shadow copies",
             SignalWeight.Moderate),
 
+        // PowerShell is split by severity rather than treated as one rule, because
+        // lumping it together made "-NoProfile" as damning as "-EncodedCommand".
+        // Every installer, build script and management tool on earth runs
+        // "powershell -NoProfile -ExecutionPolicy Bypass -Command ..." — including
+        // Nexus itself, to query Defender and enumerate scheduled tasks. A single
+        // rule meant Nexus reported its own helper processes as strongly suspicious,
+        // and reported the same about every legitimate installer on a developer's
+        // machine. That is how an advisory tool teaches people to ignore it.
         new("powershell.exe", ["-enc", "-encodedcommand", "frombase64string", "downloadstring",
-                               "downloadfile", "iex(", "invoke-expression", "-w hidden", "-windowstyle hidden",
-                               "-nop", "-noprofile", "bypass"],
-            "PowerShell was launched with an encoded, hidden, or policy-bypassing command line",
-            SignalWeight.Strong),
+                               "downloadfile", "iex(", "invoke-expression"],
+            "PowerShell was launched with an encoded command or told to download and run code directly",
+            SignalWeight.Strong, Code: "powershell-encoded"),
 
-        new("pwsh.exe", ["-enc", "-encodedcommand", "frombase64string", "downloadstring", "-w hidden", "bypass"],
-            "PowerShell 7 was launched with an encoded, hidden, or policy-bypassing command line",
-            SignalWeight.Strong),
+        new("powershell.exe", ["-w hidden", "-windowstyle hidden"],
+            "PowerShell was launched with its window hidden",
+            SignalWeight.Moderate, Code: "powershell-hidden"),
+
+        new("powershell.exe", ["-nop", "-noprofile", "bypass"],
+            "PowerShell was launched skipping the user profile or the execution policy. " +
+            "Installers and management scripts do this constantly, so on its own it means little",
+            SignalWeight.Weak, Code: "powershell-policy"),
+
+        new("pwsh.exe", ["-enc", "-encodedcommand", "frombase64string", "downloadstring", "downloadfile"],
+            "PowerShell 7 was launched with an encoded command or told to download and run code directly",
+            SignalWeight.Strong, Code: "pwsh-encoded"),
+
+        new("pwsh.exe", ["-w hidden", "-windowstyle hidden"],
+            "PowerShell 7 was launched with its window hidden",
+            SignalWeight.Moderate, Code: "pwsh-hidden"),
+
+        new("pwsh.exe", ["-nop", "-noprofile", "bypass"],
+            "PowerShell 7 was launched skipping the user profile or the execution policy",
+            SignalWeight.Weak, Code: "pwsh-policy"),
 
         new("cmd.exe", ["/v:on", "&& start", "|| start"],
             "cmd.exe was launched with an obfuscated command line",

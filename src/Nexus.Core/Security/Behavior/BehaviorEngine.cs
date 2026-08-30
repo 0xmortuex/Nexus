@@ -152,7 +152,7 @@ public sealed class BehaviorEngine
             signals.Add(new SecuritySignal(
                 SignalSource.Behavior,
                 rule.Weight,
-                "beh-lolbin-" + rule.Image.Replace(".exe", "", StringComparison.OrdinalIgnoreCase),
+                "beh-lolbin-" + (rule.Code ?? rule.Image.Replace(".exe", "", StringComparison.OrdinalIgnoreCase)),
                 rule.Explanation + $" (matched: {string.Join(", ", matched)})"));
         }
     }
