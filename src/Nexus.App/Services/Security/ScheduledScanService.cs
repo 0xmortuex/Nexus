@@ -1,6 +1,7 @@
 using System.IO;
 using Nexus.Core;
 using Nexus.Core.Logging;
+using Nexus.Core.Security;
 using Nexus.Core.Persistence;
 
 namespace Nexus.App.Services.Security;
@@ -32,10 +33,21 @@ public sealed class ScheduledScanService : IDisposable
     /// <summary>Retry interval when a scan is postponed because a game is running.</summary>
     public static readonly TimeSpan PostponedRetry = TimeSpan.FromMinutes(20);
 
+    /// <summary>
+    /// How long the machine must have been untouched before a full scan starts.
+    ///
+    /// A full scan reads every drive and the user notices. Waiting for real idle
+    /// is the difference between a scan that runs unnoticed overnight and one that
+    /// gets the whole feature switched off the first time it interrupts something.
+    /// </summary>
+    public static readonly TimeSpan RequiredIdleBeforeFullScan = TimeSpan.FromMinutes(10);
+
     private readonly ActivityLog _log;
     private readonly SentinelService _sentinel;
     private readonly SettingsService _settings;
     private readonly Func<bool> _isGameModeActive;
+    private readonly Func<TimeSpan> _idleTime;
+    private readonly ScanHistory _history;
 
     private System.Threading.Timer? _timer;
 
@@ -51,12 +63,16 @@ public sealed class ScheduledScanService : IDisposable
         ActivityLog log,
         SentinelService sentinel,
         SettingsService settings,
-        Func<bool> isGameModeActive)
+        ScanHistory history,
+        Func<bool> isGameModeActive,
+        Func<TimeSpan> idleTime)
     {
         _log = log;
         _sentinel = sentinel;
         _settings = settings;
+        _history = history;
         _isGameModeActive = isGameModeActive;
+        _idleTime = idleTime;
     }
 
     public DateTimeOffset? LastScanAt { get; private set; }
@@ -87,12 +103,55 @@ public sealed class ScheduledScanService : IDisposable
 
     public void Start()
     {
-        if (!_settings.Current.Security.ScheduledQuickScan)
+        var options = _settings.Current.Security;
+
+        if (!options.ScheduledQuickScan && !options.ScheduledFullScan)
             return;
 
         _timer = new System.Threading.Timer(_ => Tick(), null, StartupDelay, Interval);
-        _log.Info("Sentinel",
-            $"A quick check of your download and startup folders will run every {Interval.TotalHours:F0} hours.");
+
+        if (options.ScheduledQuickScan)
+        {
+            _log.Info("Sentinel",
+                $"A quick check of your download and startup folders will run every " +
+                $"{Interval.TotalHours:F0} hours.");
+        }
+
+        if (options.ScheduledFullScan)
+        {
+            _log.Info("Sentinel",
+                $"A full scan will run every {options.FullScanIntervalDays} day(s), once the machine " +
+                $"has been idle for {RequiredIdleBeforeFullScan.TotalMinutes:F0} minutes and no game " +
+                "is running.");
+        }
+    }
+
+    /// <summary>
+    /// Whether a full scan is due: switched on, enough days since the last one, the
+    /// machine genuinely idle, and no game running.
+    ///
+    /// "Since the last one" is read from the scan history rather than from a separate
+    /// stored timestamp. A full scan the user ran themselves this morning counts —
+    /// running another one tonight because a private counter did not know about it
+    /// would be the tool wasting the machine's time to satisfy its own bookkeeping.
+    /// </summary>
+    private bool FullScanIsDue(DateTimeOffset now)
+    {
+        var options = _settings.Current.Security;
+
+        if (!options.ScheduledFullScan)
+            return false;
+
+        if (_idleTime() < RequiredIdleBeforeFullScan)
+            return false;
+
+        var last = _history.All.FirstOrDefault(run => run.Kind == ScanKind.FullDisk);
+
+        // Never scanned: due now.
+        if (last is null)
+            return true;
+
+        return now - last.StartedAt >= TimeSpan.FromDays(Math.Max(1, options.FullScanIntervalDays));
     }
 
     private void Tick()
@@ -114,7 +173,14 @@ public sealed class ScheduledScanService : IDisposable
                 return;
             }
 
-            _ = RunAsync();
+            if (FullScanIsDue(DateTimeOffset.Now))
+            {
+                _ = RunFullScanAsync();
+                return;
+            }
+
+            if (_settings.Current.Security.ScheduledQuickScan)
+                _ = RunAsync();
         }
         catch (Exception ex)
         {
@@ -192,6 +258,89 @@ public sealed class ScheduledScanService : IDisposable
     /// button and the timer cannot both get in.
     /// </summary>
     public Task RunNowAsync() => RunAsync();
+
+    /// <summary>
+    /// The scheduled full scan. Shares the same single-flight gate as the quick check,
+    /// so a full scan and a quick check can never run at once and chew the disk
+    /// together.
+    /// </summary>
+    private async Task RunFullScanAsync()
+    {
+        if (!_gate.TryEnter())
+            return;
+
+        var cancellation = new CancellationTokenSource();
+        _running = cancellation;
+
+        var started = DateTimeOffset.Now;
+        int scanned = 0;
+        int notable = 0;
+        bool completed = true;
+
+        _log.Info("Sentinel", "Starting the scheduled full scan; the machine has been idle.");
+
+        try
+        {
+            await foreach (var verdict in _sentinel.ScanEverythingAsync(cancellation.Token)
+                               .ConfigureAwait(false))
+            {
+                scanned++;
+
+                if (verdict.WarrantsAlert)
+                    notable++;
+
+                // Someone came back to the machine. Their work matters more than
+                // finishing tonight; what was scanned is recorded and the rest waits
+                // for the next quiet spell.
+                if (scanned % 200 == 0 && _idleTime() < RequiredIdleBeforeFullScan)
+                {
+                    completed = false;
+                    _log.Info("Sentinel",
+                        $"Paused the full scan after {scanned:N0} files because you are using the " +
+                        "machine again. It will pick up at the next idle period.");
+                    break;
+                }
+
+                if (_isGameModeActive())
+                {
+                    completed = false;
+                    _log.Info("Sentinel", $"Stopped the full scan after {scanned:N0} files; a game started.");
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            completed = false;
+        }
+        catch (Exception ex)
+        {
+            completed = false;
+            _log.Warn("Sentinel", $"The full scan stopped early: {ex.Message}");
+        }
+        finally
+        {
+            LastScanAt = DateTimeOffset.Now;
+
+            _history.Record(new ScanRun
+            {
+                StartedAt = started,
+                Kind = ScanKind.FullDisk,
+                Target = string.Join(", ", SentinelService.FixedDriveRoots()),
+                FilesScanned = scanned,
+                Findings = notable,
+                DurationSeconds = (DateTimeOffset.Now - started).TotalSeconds,
+                Completed = completed,
+            });
+
+            _log.Info("Sentinel",
+                $"Scheduled full scan finished: {scanned:N0} file(s), {notable} worth a look.");
+
+            cancellation.Dispose();
+            _running = null;
+            _gate.Exit();
+        }
+    }
 
     public void Dispose()
     {

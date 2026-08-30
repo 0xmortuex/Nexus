@@ -80,6 +80,12 @@ public sealed class SettingsViewModel : ViewModelBase
         set { _settings.Update(s => s with { Security = s.Security with { ScanRemovableDrives = value } }); OnPropertyChanged(); }
     }
 
+    public bool ScheduledFullScan
+    {
+        get => _settings.Current.Security.ScheduledFullScan;
+        set { _settings.Update(s => s with { Security = s.Security with { ScheduledFullScan = value } }); OnPropertyChanged(); }
+    }
+
     public bool CheckDefenderHealth
     {
         get => _settings.Current.Security.CheckDefenderHealth;

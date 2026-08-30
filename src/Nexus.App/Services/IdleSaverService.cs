@@ -58,7 +58,14 @@ public sealed class IdleSaverService : IDisposable
         }
     }
 
-    private static TimeSpan GetIdleTime()
+    /// <summary>
+    /// How long since the user last touched the machine.
+    ///
+    /// Public because the scheduled full scan needs the same answer, and a second
+    /// copy of this P/Invoke would be a second place for the tick-wraparound bug to
+    /// come back.
+    /// </summary>
+    public static TimeSpan GetIdleTime()
     {
         var info = new NativeMethods.LASTINPUTINFO
         {

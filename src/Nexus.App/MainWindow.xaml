@@ -1079,6 +1079,11 @@
                             <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
                                        Text="Checks where new files actually arrive, rather than crawling the whole disk. Never runs while a game is active, and stays silent unless it finds something."/>
 
+                            <CheckBox Content="Run a full scan every week when the machine is idle"
+                                      IsChecked="{Binding ScheduledFullScan}"/>
+                            <TextBlock Style="{StaticResource DimText}" TextWrapping="Wrap" Margin="20,2,0,8"
+                                       Text="Off by default, unlike the other watches. Nexus exists to keep this machine responsive, and a surprise full scan chewing the disk is the behaviour it was built to prevent. Switched on, it waits until you have been away for ten minutes, never runs while a game is on, and pauses the moment you come back."/>
+
                             <CheckBox Content="Check Microsoft Defender's health at startup"
                                       IsChecked="{Binding CheckDefenderHealth}"/>
 

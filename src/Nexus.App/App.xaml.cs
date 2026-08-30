@@ -226,7 +226,9 @@ public partial class App : System.Windows.Application
             tweaks, debloat, settings, games, power, topology,
             throttleDetector, () => sentinel.DefenderStatus, log);
         var rating = new RatingService(tweaks, debloat, dns, settings, games, topology, () => keepAwake.Enabled);
-        var scheduledScan = new ScheduledScanService(log, sentinel, settings, () => gameMode.IsActive);
+        var scheduledScan = new ScheduledScanService(
+            log, sentinel, settings, scanHistory,
+            () => gameMode.IsActive, IdleSaverService.GetIdleTime);
 
         var sentinelReset = new SentinelResetService(
             quarantine, quarantineJournal, trustStore, verdictCache, baselines, ransomwareGuard,

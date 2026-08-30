@@ -93,6 +93,20 @@ public sealed record SecurityOptions
     public bool ScanRemovableDrives { get; set; } = true;
 
     /// <summary>
+    /// Run a full scan of every fixed drive periodically.
+    ///
+    /// Off unless asked for, unlike the other watches. Nexus's other half exists to
+    /// protect frame times and keep the machine responsive, and a surprise full scan
+    /// chewing the disk is exactly the behaviour it was built to prevent. When it is
+    /// switched on it waits for the machine to be genuinely idle and never competes
+    /// with a game.
+    /// </summary>
+    public bool ScheduledFullScan { get; set; }
+
+    /// <summary>Days between full scans when they are switched on.</summary>
+    public int FullScanIntervalDays { get; set; } = 7;
+
+    /// <summary>
     /// Files, folders and file types the user has asked Nexus to skip.
     ///
     /// Every antivirus has this and every antivirus is right to: a developer whose
