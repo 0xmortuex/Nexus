@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:Nexus.App.Controls"
-        Title="Nexus Optimizer" Height="760" Width="1180"
+        Title="Nexus Optimizer" Height="860" Width="1320" MinHeight="620" MinWidth="1020"
         Background="{StaticResource BgBrush}">
     <Grid x:Name="Root" Opacity="0" RenderTransformOrigin="0.5,0.5">
         <Grid.RenderTransform>
@@ -14,17 +14,18 @@
         </Grid.RowDefinitions>
 
         <!-- Header: app name + mode switch -->
-        <DockPanel Grid.Row="0" Margin="12,10,12,0" LastChildFill="False">
-            <TextBlock Text="Nexus" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <Border Margin="10,0,0,0" Padding="7,2" CornerRadius="6" VerticalAlignment="Center"
+        <DockPanel Grid.Row="0" Margin="20,16,20,4" LastChildFill="False">
+            <TextBlock Text="Nexus" FontSize="22" FontWeight="Bold" VerticalAlignment="Center"/>
+            <Border Margin="12,0,0,0" Padding="10,4" CornerRadius="12" VerticalAlignment="Center"
                     Background="{StaticResource PanelAltBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                <TextBlock Text="{Binding ModeLabel}" FontSize="11" Foreground="{StaticResource AccentBrush}"/>
+                <TextBlock Text="{Binding ModeLabel}" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}"/>
             </Border>
             <Button DockPanel.Dock="Right" Content="{Binding ModeButtonText}" Command="{Binding ToggleModeCommand}"
-                    VerticalAlignment="Center"/>
+                    VerticalAlignment="Center" Margin="0"/>
         </DockPanel>
 
-    <TabControl Grid.Row="1" x:Name="Tabs" Margin="8">
+    <TabControl Grid.Row="1" x:Name="Tabs" Margin="14,6,14,14">
 
         <!-- ================= Dashboard ================= -->
         <TabItem Header="Dashboard">
@@ -110,7 +111,7 @@
                                         <DataTemplate>
                                             <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,6">
                                                 <DockPanel>
-                                                    <Button DockPanel.Dock="Right" Width="70" VerticalAlignment="Top"
+                                                    <Button DockPanel.Dock="Right" MinWidth="88" VerticalAlignment="Top"
                                                             Content="{Binding ActionText}" Command="{Binding ApplyCommand}"
                                                             Visibility="{Binding Actionable, Converter={StaticResource BoolToVisibility}}"/>
                                                     <StackPanel Margin="0,0,10,0">
@@ -339,7 +340,7 @@
                                 <DataTemplate>
                                     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,8">
                                         <DockPanel>
-                                            <Button DockPanel.Dock="Right" Width="70" Content="{Binding ButtonText}"
+                                            <Button DockPanel.Dock="Right" MinWidth="88" Content="{Binding ButtonText}"
                                                     Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
                                             <StackPanel Margin="0,0,10,0">
                                                 <DockPanel>
@@ -382,7 +383,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="0,4">
-                                        <Button DockPanel.Dock="Right" Width="80" Content="{Binding ButtonText}"
+                                        <Button DockPanel.Dock="Right" MinWidth="96" Content="{Binding ButtonText}"
                                                 Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
                                         <StackPanel Margin="0,0,10,0">
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
@@ -400,7 +401,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="0,4">
-                                        <Button DockPanel.Dock="Right" Width="80" Content="{Binding ButtonText}"
+                                        <Button DockPanel.Dock="Right" MinWidth="96" Content="{Binding ButtonText}"
                                                 Command="{Binding ToggleCommand}" VerticalAlignment="Top"/>
                                         <StackPanel Margin="0,0,10,0">
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
@@ -487,7 +488,7 @@
         <!-- ================= Memory & Network ================= -->
         <TabItem Header="Memory &amp; Network">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="10" DataContext="{Binding Tools}" MaxWidth="760" HorizontalAlignment="Left">
+                <StackPanel Margin="16" DataContext="{Binding Tools}">
                     <GroupBox Header="Standby memory list">
                         <StackPanel>
                             <TextBlock Text="{Binding MemoryStatus}" Style="{StaticResource DimText}" Margin="0,0,0,8"/>
@@ -513,7 +514,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel Margin="0,3">
-                                            <Button DockPanel.Dock="Right" Content="Use" Width="60"
+                                            <Button DockPanel.Dock="Right" Content="Use" MinWidth="60"
                                                     Command="{Binding DataContext.ApplyDnsCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <TextBlock Width="110" Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -532,7 +533,7 @@
         <!-- ================= Security (Sentinel) ================= -->
         <TabItem Header="Security" x:Name="SecurityTab">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="10" DataContext="{Binding Security}" MaxWidth="980" HorizontalAlignment="Left">
+                <StackPanel Margin="16" DataContext="{Binding Security}">
 
                     <!-- The big switch. One control, plain words, no jargon, no restart.
                          Someone unsure what Nexus is doing to their machine should be
@@ -667,38 +668,69 @@
 
                     <GroupBox Header="Scan">
                         <StackPanel>
-                            <TextBlock Text="{Binding Status}" Style="{StaticResource DimText}"
-                                       TextWrapping="Wrap" Margin="0,0,0,8"/>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBox x:Name="ScanFolderBox" Width="330" Margin="0,0,8,0"
-                                         VerticalContentAlignment="Center"/>
-                                <Button Content="Scan folder" Margin="0,0,8,0"
-                                        Command="{Binding ScanFolderCommand}"
-                                        CommandParameter="{Binding Text, ElementName=ScanFolderBox}"/>
-                                <Button Content="Quick check" Margin="0,0,8,0"
-                                        ToolTip="Downloads, temp and startup folders — the places things arrive."
+                            <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
+                                       FontSize="15" Margin="0,0,0,14"/>
+
+                            <!-- Progress. Hidden entirely when nothing is running, so the
+                                 panel is not carrying a dead bar most of the time. -->
+                            <StackPanel Margin="0,0,0,16"
+                                        Visibility="{Binding IsScanning, Converter={StaticResource BoolToVisibility}}">
+                                <ProgressBar Value="{Binding ScanProgress, Mode=OneWay}" Maximum="100"
+                                             IsIndeterminate="{Binding ScanIsCounting}" Margin="0,0,0,8"/>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" FontWeight="SemiBold"
+                                               Text="{Binding ScanProgress, StringFormat={}{0:F0}%}"
+                                               Visibility="{Binding ScanIsCounting, Converter={StaticResource InverseBoolToVisibility}}"/>
+                                    <TextBlock Text="{Binding ScanDetail}" Style="{StaticResource DimText}"/>
+                                </DockPanel>
+                            </StackPanel>
+
+                            <!-- The two people actually want. -->
+                            <WrapPanel Margin="0,0,0,6">
+                                <Button Content="Quick check" Style="{StaticResource PrimaryButton}"
+                                        ToolTip="Downloads, temp and startup folders &#x2014; the places things arrive. Takes seconds."
                                         Command="{Binding QuickScanCommand}"/>
-                                <Button Content="Full scan" Margin="0,0,8,0"
-                                        ToolTip="Every fixed drive. Takes a long time; you can keep working and stop it whenever you like."
+                                <Button Content="Full scan" Style="{StaticResource PrimaryButton}"
+                                        ToolTip="Every fixed drive. Shows progress, and you can stop it at any time."
                                         Command="{Binding FullScanCommand}"/>
-                                <Button Content="Check running programs" Margin="0,0,8,0"
-                                        ToolTip="Checks the files behind every program running right now. Nothing is stopped or closed."
+                                <Button Content="Stop" Style="{StaticResource QuietButton}"
+                                        Command="{Binding CancelScanCommand}"/>
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,18"
+                                       Text="A quick check covers where files actually arrive. A full scan reads every drive and can take a while &#x2014; you can keep using the machine, and stopping it keeps whatever it already found."/>
+
+                            <TextBlock Text="SCAN A SPECIFIC FOLDER" Style="{StaticResource Eyebrow}"/>
+                            <DockPanel Margin="0,0,0,18">
+                                <Button DockPanel.Dock="Right" Content="Scan folder"
+                                        Command="{Binding ScanFolderCommand}"
+                                        CommandParameter="{Binding ScanFolder}"/>
+                                <Button DockPanel.Dock="Right" Content="Browse&#x2026;"
+                                        Command="{Binding BrowseScanFolderCommand}"/>
+                                <TextBox Text="{Binding ScanFolder, UpdateSourceTrigger=PropertyChanged}"
+                                         VerticalContentAlignment="Center" Margin="0,0,8,8"/>
+                            </DockPanel>
+
+                            <TextBlock Text="OTHER CHECKS" Style="{StaticResource Eyebrow}"/>
+                            <WrapPanel>
+                                <Button Content="Running programs"
+                                        ToolTip="Checks the file behind every program running right now. Nothing is stopped or closed."
                                         Command="{Binding ScanRunningCommand}"/>
-                                <Button Content="Check startup items" Margin="0,0,8,0"
+                                <Button Content="Startup items"
+                                        ToolTip="Run keys, services, scheduled tasks &#x2014; the places something arranges to come back."
                                         Command="{Binding AuditStartupCommand}"/>
-                                <Button Content="Check connections" Margin="0,0,8,0"
+                                <Button Content="Connections"
+                                        ToolTip="What is talking to the internet at this moment."
                                         Command="{Binding CheckConnectionsCommand}"/>
-                                <Button Content="Check browser extensions" Margin="0,0,8,0"
-                                        ToolTip="Lists the extensions installed in Chrome, Edge, Brave, Vivaldi and Opera, and what each one is allowed to do."
+                                <Button Content="Browser extensions"
+                                        ToolTip="Lists the extensions in Chrome, Edge, Brave, Vivaldi and Opera, and what each one is allowed to do."
                                         Command="{Binding AuditExtensionsCommand}"/>
-                                <Button Content="Check Windows security settings" Margin="0,0,8,0"
+                                <Button Content="Windows security settings"
                                         ToolTip="Firewall, UAC, SmartScreen, Secure Boot, drive encryption and Windows Update. Reports how the machine is set up; changes nothing."
                                         Command="{Binding AuditPostureCommand}"/>
-                                <Button Content="Check network settings" Margin="0,0,8,0"
-                                        ToolTip="Checks the hosts file, proxy and DNS servers — the settings malware changes to cut you off from help."
+                                <Button Content="Network settings"
+                                        ToolTip="The hosts file, proxy and DNS servers &#x2014; the settings malware changes to cut you off from help."
                                         Command="{Binding AuditSystemSettingsCommand}"/>
-                                <Button Content="Stop" Command="{Binding CancelScanCommand}"/>
-                            </StackPanel>
+                            </WrapPanel>
                         </StackPanel>
                     </GroupBox>
 
@@ -862,10 +894,10 @@
                                             <StackPanel>
                                                 <DockPanel>
                                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                                        <Button Content="Trust" Width="70" Margin="0,0,6,0"
+                                                        <Button Content="Trust" MinWidth="70" Margin="0,0,6,0"
                                                                 Command="{Binding DataContext.TrustCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                 CommandParameter="{Binding}"/>
-                                                        <Button Content="Quarantine" Width="90"
+                                                        <Button Content="Quarantine" MinWidth="90"
                                                                 IsEnabled="{Binding CanQuarantine}"
                                                                 Command="{Binding DataContext.QuarantineCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                 CommandParameter="{Binding}"/>
@@ -898,7 +930,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel Margin="0,3">
-                                            <Button DockPanel.Dock="Right" Content="Stop trusting" Width="100"
+                                            <Button DockPanel.Dock="Right" Content="Stop trusting" MinWidth="100"
                                                     Command="{Binding DataContext.RevokeTrustCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <TextBlock Width="220" Text="{Binding Name}" FontWeight="SemiBold"
@@ -920,7 +952,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <DockPanel Margin="0,3">
-                                            <Button DockPanel.Dock="Right" Content="Put back" Width="80"
+                                            <Button DockPanel.Dock="Right" Content="Put back" MinWidth="80"
                                                     Command="{Binding DataContext.RestoreCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <TextBlock Width="180" Text="{Binding Name}" FontWeight="SemiBold"
@@ -944,7 +976,7 @@
         <TabItem Header="Latency &amp; Hardware"
                  Visibility="{Binding IsAdvanced, Converter={StaticResource BoolToVisibility}}">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="10" DataContext="{Binding Latency}" MaxWidth="900" HorizontalAlignment="Left">
+                <StackPanel Margin="16" DataContext="{Binding Latency}">
                     <TextBlock Style="{StaticResource DimText}" Margin="0,0,0,10"
                                Text="These settings target DPC/interrupt latency and timer behaviour. Most take effect after a reboot, several are hardware-specific, and gains vary a lot between systems — benchmark, and revert anything that doesn't help."/>
 
@@ -993,8 +1025,8 @@
                                 <DataTemplate>
                                     <DockPanel Margin="0,4">
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
-                                            <Button Content="Apply" Width="60" Command="{Binding ApplyCommand}" Margin="0,0,4,0"/>
-                                            <Button Content="Undo" Width="60" Command="{Binding UndoCommand}"/>
+                                            <Button Content="Apply" MinWidth="60" Command="{Binding ApplyCommand}" Margin="0,0,4,0"/>
+                                            <Button Content="Undo" MinWidth="60" Command="{Binding UndoCommand}"/>
                                         </StackPanel>
                                         <StackPanel Margin="0,0,10,0">
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
@@ -1081,7 +1113,7 @@
         <!-- ================= Settings ================= -->
         <TabItem Header="Settings">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="10" DataContext="{Binding Settings}" MaxWidth="640" HorizontalAlignment="Left">
+                <StackPanel Margin="16" DataContext="{Binding Settings}" MaxWidth="1040" HorizontalAlignment="Center">
                     <GroupBox Header="Security (Sentinel)">
                         <StackPanel>
                             <CheckBox Content="Watch process launches for suspicious behaviour"

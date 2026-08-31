@@ -152,6 +152,7 @@ public sealed class SecurityViewModel : ViewModelBase
         AuditExtensionsCommand = new RelayCommand(AuditExtensions);
         ScanRunningCommand = new RelayCommand(async _ => await ScanRunningAsync(), _ => !IsScanning);
         RefreshConnectionLogCommand = new RelayCommand(RefreshConnectionLog);
+        BrowseScanFolderCommand = new RelayCommand(BrowseScanFolder);
         ClearConnectionLogCommand = new RelayCommand(() => { _sentinel.Connections.Clear(); RefreshConnectionLog(); });
         FullScanCommand = new RelayCommand(async _ => await FullScanAsync(), _ => !IsScanning);
         SaveReportCommand = new RelayCommand(SaveReport);
@@ -212,6 +213,7 @@ public sealed class SecurityViewModel : ViewModelBase
     public RelayCommand AuditExtensionsCommand { get; }
     public RelayCommand ScanRunningCommand { get; }
     public RelayCommand RefreshConnectionLogCommand { get; }
+    public RelayCommand BrowseScanFolderCommand { get; }
     public RelayCommand ClearConnectionLogCommand { get; }
     public RelayCommand FullScanCommand { get; }
     public RelayCommand SaveReportCommand { get; }
@@ -410,49 +412,70 @@ public sealed class SecurityViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Scan every fixed drive.
+    /// Scan every fixed drive, with real progress.
     ///
-    /// This takes a long time — tens of minutes on a large disk — so the progress
-    /// line names the file being read rather than only counting. A progress display
-    /// that sits on "scanning…" for half an hour is indistinguishable from one that
-    /// has hung, and the user's only recourse is to kill the program.
+    /// The files are counted first. That is a second walk of the disk, but it only
+    /// reads directory entries rather than file contents, and it buys a percentage
+    /// and an estimate instead of a number that climbs with no end in sight. On a
+    /// scan that runs for tens of minutes, knowing whether it is a tenth or nine
+    /// tenths done is most of what the user wants from the screen.
     /// </summary>
     private async Task FullScanAsync()
     {
         IsScanning = true;
         _scanCancellation = new CancellationTokenSource();
+        var token = _scanCancellation.Token;
 
         var started = DateTimeOffset.Now;
-        bool completed = true;
         int scanned = 0;
         int notable = 0;
+        bool completed = true;
 
         try
         {
             var drives = string.Join(", ", SentinelService.FixedDriveRoots());
-            Status = $"Full scan of {drives} — this takes a while. You can keep using the machine, " +
-                     "and you can stop it at any time.";
 
-            await foreach (var verdict in _sentinel.ScanEverythingAsync(_scanCancellation.Token))
+            ScanIsCounting = true;
+            ScanProgress = 0;
+            Status = $"Counting the files on {drives}\u2026";
+
+            int total = await Task.Run(() => _sentinel.EnumerateEverything().Count(), token)
+                .ConfigureAwait(true);
+
+            ScanTotal = total;
+            ScanIsCounting = false;
+
+            Status = $"Scanning {total:N0} files on {drives}. You can keep using the machine, " +
+                     "and you can stop at any time.";
+
+            await foreach (var verdict in _sentinel
+                .ScanFilesAsync(_sentinel.EnumerateEverything(), token)
+                .ConfigureAwait(true))
             {
                 scanned++;
                 if (verdict.WarrantsAlert)
                     notable++;
 
-                if (scanned % 50 == 0)
+                if (scanned % 25 == 0 || scanned == total)
                 {
-                    var elapsed = Clock(DateTimeOffset.Now - started);
-                    Status = $"Full scan: {scanned:N0} files, {notable} worth a look, " +
-                             $"{elapsed} elapsed. Currently in " +
-                             $"{ShortFolder(verdict.Target.Path)}.";
+                    ScanScanned = scanned;
+                    ScanNotable = notable;
+                    ScanProgress = total > 0 ? Math.Min(100.0, scanned * 100.0 / total) : 0;
+
+                    var elapsed = DateTimeOffset.Now - started;
+                    ScanDetail = $"{scanned:N0} of {total:N0}  \u00b7  {Clock(elapsed)} elapsed" +
+                                 Remaining(scanned, total, elapsed) +
+                                 $"  \u00b7  {notable} worth a look";
                 }
             }
 
-            var total = Clock(DateTimeOffset.Now - started);
+            ScanProgress = 100;
+            var took = Clock(DateTimeOffset.Now - started);
+
             Status = notable == 0
-                ? $"Full scan finished: {scanned:N0} files in {total}. Nothing worth flagging."
-                : $"Full scan finished: {scanned:N0} files in {total}, {notable} worth a look. " +
-                  "Nothing was changed — read the reasons and decide for yourself.";
+                ? $"Full scan finished: {scanned:N0} files in {took}. Nothing worth flagging."
+                : $"Full scan finished: {scanned:N0} files in {took}, {notable} worth a look. " +
+                  "Nothing was changed \u2014 read the reasons and decide for yourself.";
         }
         catch (OperationCanceledException)
         {
@@ -462,6 +485,8 @@ public sealed class SecurityViewModel : ViewModelBase
         finally
         {
             IsScanning = false;
+            ScanIsCounting = false;
+            ScanDetail = "";
             _scanCancellation?.Dispose();
             _scanCancellation = null;
             RefreshFindings();
@@ -471,7 +496,67 @@ public sealed class SecurityViewModel : ViewModelBase
         }
     }
 
-    private static string Clock(TimeSpan elapsed) => elapsed.ToString(@"hh\:mm\:ss");
+    /// <summary>A rough time-remaining, once there is enough of a rate to mean
+    /// anything. Silent early on rather than showing a wild first guess.</summary>
+    private static string Remaining(int scanned, int total, TimeSpan elapsed)
+    {
+        if (scanned < 200 || total <= scanned || elapsed.TotalSeconds < 5)
+            return "";
+
+        double perFile = elapsed.TotalSeconds / scanned;
+        var left = TimeSpan.FromSeconds(perFile * (total - scanned));
+
+        return $"  \u00b7  about {Clock(left)} left";
+    }
+
+    // ---- Progress, shown by the bar on the Security tab ----
+
+    private double _scanProgress;
+    private int _scanTotal;
+    private int _scanScanned;
+    private int _scanNotable;
+    private bool _scanIsCounting;
+    private string _scanDetail = "";
+
+    /// <summary>0-100. Meaningless while <see cref="ScanIsCounting"/> is true.</summary>
+    public double ScanProgress
+    {
+        get => _scanProgress;
+        private set => Set(ref _scanProgress, value);
+    }
+
+    public int ScanTotal
+    {
+        get => _scanTotal;
+        private set => Set(ref _scanTotal, value);
+    }
+
+    public int ScanScanned
+    {
+        get => _scanScanned;
+        private set => Set(ref _scanScanned, value);
+    }
+
+    public int ScanNotable
+    {
+        get => _scanNotable;
+        private set => Set(ref _scanNotable, value);
+    }
+
+    /// <summary>True while the files are being counted, so the bar can run
+    /// indeterminate instead of sitting at zero looking stuck.</summary>
+    public bool ScanIsCounting
+    {
+        get => _scanIsCounting;
+        private set => Set(ref _scanIsCounting, value);
+    }
+
+    /// <summary>"12,400 of 96,000 · 00:01:12 elapsed · about 00:07:40 left · 2 worth a look"</summary>
+    public string ScanDetail
+    {
+        get => _scanDetail;
+        private set => Set(ref _scanDetail, value);
+    }
 
     /// <summary>
     /// Scan whatever the user right-clicked, whether that is one file or a folder.
@@ -509,7 +594,7 @@ public sealed class SecurityViewModel : ViewModelBase
 
         try
         {
-            Status = $"Looking at {Path.GetFileName(path)}…";
+            Status = $"Looking at {Path.GetFileName(path)}\u2026";
 
             var verdict = await _sentinel.ScanFileAsync(path, _scanCancellation.Token)
                 .ConfigureAwait(false);
@@ -544,6 +629,8 @@ public sealed class SecurityViewModel : ViewModelBase
         }
     }
 
+    private static string Clock(TimeSpan elapsed) => elapsed.ToString(@"hh\:mm\:ss");
+
     /// <summary>The last two path segments — enough to show progress without
     /// spilling a 200-character path across the window.</summary>
     private static string ShortFolder(string? path)
@@ -557,6 +644,33 @@ public sealed class SecurityViewModel : ViewModelBase
 
         var parts = folder.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         return parts.Length <= 2 ? folder : string.Join(Path.DirectorySeparatorChar, parts[^2..]);
+    }
+
+    private string _scanFolder = "";
+
+    /// <summary>The folder in the box, so Browse can fill it in.</summary>
+    public string ScanFolder
+    {
+        get => _scanFolder;
+        set => Set(ref _scanFolder, value);
+    }
+
+    /// <summary>
+    /// Pick a folder with a picker rather than typing a path.
+    ///
+    /// Typing one is the step people get wrong, and a mistyped path just reports
+    /// "pick a folder that exists", which teaches nothing about what went wrong.
+    /// </summary>
+    private void BrowseScanFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Pick a folder to scan",
+            Multiselect = false,
+        };
+
+        if (dialog.ShowDialog() == true)
+            ScanFolder = dialog.FolderName;
     }
 
     // ---- Exclusions ----

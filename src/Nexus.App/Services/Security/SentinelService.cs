@@ -734,6 +734,23 @@ public sealed class SentinelService : IDisposable
         return [.. paths];
     }
 
+    /// <summary>
+    /// Every file a full scan would look at, across all fixed drives.
+    ///
+    /// Separate from the scan itself so the UI can count first and then show real
+    /// progress. Counting is cheap next to scanning — it reads directory entries, not
+    /// file contents — so the second pass is worth it to be able to say "31% of
+    /// 412,000" instead of a number that climbs forever.
+    /// </summary>
+    public IEnumerable<string> EnumerateEverything()
+    {
+        foreach (var root in FixedDriveRoots())
+        {
+            foreach (var file in EnumerateScannable(root, recursive: true))
+                yield return file;
+        }
+    }
+
     /// <summary>The drives a full scan covers. Anything not ready is skipped rather
     /// than throwing — an empty card reader should not end a scan.</summary>
     public static IReadOnlyList<string> FixedDriveRoots()
