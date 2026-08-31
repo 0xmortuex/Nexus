@@ -735,20 +735,175 @@ public sealed class SentinelService : IDisposable
     }
 
     /// <summary>
-    /// Every file a full scan would look at, across all fixed drives.
+    /// Every file a scan of these drives would look at.
     ///
     /// Separate from the scan itself so the UI can count first and then show real
     /// progress. Counting is cheap next to scanning — it reads directory entries, not
     /// file contents — so the second pass is worth it to be able to say "31% of
     /// 412,000" instead of a number that climbs forever.
+    ///
+    /// The token is checked as it goes. Without that, Stop did nothing at all while
+    /// the count was running, and on a machine with several drives the count is the
+    /// part that takes minutes — so the button appeared broken precisely when someone
+    /// would reach for it.
     /// </summary>
-    public IEnumerable<string> EnumerateEverything()
+    public IEnumerable<string> EnumerateDrives(
+        IEnumerable<string> roots, CancellationToken cancellationToken = default)
     {
-        foreach (var root in FixedDriveRoots())
+        foreach (var root in roots)
         {
             foreach (var file in EnumerateScannable(root, recursive: true))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
                 yield return file;
+            }
         }
+    }
+
+    /// <summary>
+    /// A drive the user can choose to scan.
+    /// </summary>
+    /// <param name="Root">"C:\\".</param>
+    /// <param name="Label">The volume label, or empty.</param>
+    /// <param name="Kind">"SSD", "Hard disk", "USB or removable", "Network" or "Drive".</param>
+    /// <param name="TotalBytes">Zero when it could not be read.</param>
+    public sealed record ScannableDrive(
+        string Root, string Label, string Kind, long TotalBytes, long FreeBytes)
+    {
+        public string Display => Label.Length > 0 ? $"{Root.TrimEnd('\\')}  {Label}" : Root.TrimEnd('\\');
+
+        public string Size => TotalBytes > 0
+            ? $"{(TotalBytes - FreeBytes) / 1024.0 / 1024 / 1024:F0} GB used of {TotalBytes / 1024.0 / 1024 / 1024:F0} GB"
+            : "size unknown";
+    }
+
+    /// <summary>
+    /// Every drive worth offering, fixed and removable alike.
+    ///
+    /// Removable drives are included here even though the scheduled full scan skips
+    /// them: this list is what someone picks from deliberately, and "scan the USB
+    /// stick I just plugged in" is a reasonable thing to want.
+    /// </summary>
+    public static IReadOnlyList<ScannableDrive> ScannableDrives()
+    {
+        var kinds = PhysicalDriveKinds();
+        var drives = new List<ScannableDrive>();
+
+        foreach (var drive in SafeDrives())
+        {
+            try
+            {
+                if (!drive.IsReady)
+                    continue;
+
+                if (drive.DriveType is not (DriveType.Fixed or DriveType.Removable))
+                    continue;
+
+                var root = drive.RootDirectory.FullName;
+                var letter = root.Length > 0 ? root[..1].ToUpperInvariant() : "";
+
+                string kind = drive.DriveType == DriveType.Removable
+                    ? "USB or removable"
+                    : kinds.TryGetValue(letter, out var media) ? media : "Drive";
+
+                drives.Add(new ScannableDrive(
+                    root,
+                    drive.VolumeLabel ?? "",
+                    kind,
+                    drive.TotalSize,
+                    drive.AvailableFreeSpace));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                          or System.Security.SecurityException)
+            {
+                // A drive that vanished between listing and asking about it.
+            }
+        }
+
+        return drives;
+    }
+
+    private static IEnumerable<DriveInfo> SafeDrives()
+    {
+        try
+        {
+            return DriveInfo.GetDrives();
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Maps drive letters to "SSD" or "Hard disk" where Windows will say.
+    ///
+    /// Best effort: the storage provider is missing on some systems and the query
+    /// needs rights that are not guaranteed. An unknown drive is simply listed as
+    /// "Drive" rather than guessed at.
+    /// </summary>
+    private static Dictionary<string, string> PhysicalDriveKinds()
+    {
+        var kinds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                "SELECT DriveLetter, MediaType FROM MSFT_Partition");
+
+            using var disks = new System.Management.ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                "SELECT DeviceId, MediaType FROM MSFT_PhysicalDisk");
+
+            var byDisk = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var disk in disks.Get())
+            {
+                using (disk)
+                {
+                    var id = disk["DeviceId"]?.ToString();
+                    if (id is null)
+                        continue;
+
+                    // 3 = HDD, 4 = SSD, 5 = SCM. Anything else is not worth naming.
+                    byDisk[id] = Convert.ToInt32(disk["MediaType"] ?? 0) switch
+                    {
+                        4 => "SSD",
+                        3 => "Hard disk",
+                        _ => "Drive",
+                    };
+                }
+            }
+
+            using var partitions = new System.Management.ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                "SELECT DriveLetter, DiskNumber FROM MSFT_Partition");
+
+            foreach (var partition in partitions.Get())
+            {
+                using (partition)
+                {
+                    var letter = partition["DriveLetter"]?.ToString();
+                    var disk = partition["DiskNumber"]?.ToString();
+
+                    if (string.IsNullOrWhiteSpace(letter) || letter == "\0" || disk is null)
+                        continue;
+
+                    if (byDisk.TryGetValue(disk, out var kind))
+                        kinds[letter] = kind;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is System.Management.ManagementException
+                                      or UnauthorizedAccessException
+                                      or System.Runtime.InteropServices.COMException
+                                      or PlatformNotSupportedException)
+        {
+            // Storage provider unavailable; every drive stays "Drive".
+        }
+
+        return kinds;
     }
 
     /// <summary>The drives a full scan covers. Anything not ready is skipped rather

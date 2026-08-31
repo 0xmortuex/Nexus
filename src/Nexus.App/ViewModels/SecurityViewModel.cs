@@ -185,8 +185,15 @@ public sealed class SecurityViewModel : ViewModelBase
         get => _isScanning;
         private set
         {
-            if (Set(ref _isScanning, value))
-                OnPropertyChanged(nameof(CanScan));
+            if (!Set(ref _isScanning, value))
+                return;
+
+            OnPropertyChanged(nameof(CanScan));
+
+            // RelayCommand re-evaluates CanExecute on CommandManager.RequerySuggested,
+            // which WPF raises on input. During a long scan there may be no input at
+            // all, so Stop could stay greyed out for minutes. Ask explicitly.
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
     }
 
@@ -412,16 +419,40 @@ public sealed class SecurityViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Scan every fixed drive, with real progress.
+    /// Scan the drives the user picks, with real progress.
     ///
-    /// The files are counted first. That is a second walk of the disk, but it only
-    /// reads directory entries rather than file contents, and it buys a percentage
-    /// and an estimate instead of a number that climbs with no end in sight. On a
-    /// scan that runs for tens of minutes, knowing whether it is a tenth or nine
-    /// tenths done is most of what the user wants from the screen.
+    /// It asks first. "Full scan" used to mean every fixed drive, decided silently,
+    /// and on a machine with a second disk full of games that is a completely
+    /// different job from scanning Windows.
+    ///
+    /// The files are counted before scanning. That is a second walk, but it only reads
+    /// directory entries rather than file contents, and it buys a percentage and an
+    /// estimate instead of a number climbing with no end in sight.
     /// </summary>
     private async Task FullScanAsync()
     {
+        var drives = SentinelService.ScannableDrives();
+
+        if (drives.Count == 0)
+        {
+            Status = "No drives available to scan.";
+            return;
+        }
+
+        var systemRoot = Path.GetPathRoot(Environment.SystemDirectory);
+        var chooser = new DriveChooserWindow(drives, systemRoot)
+        {
+            Owner = Application.Current?.MainWindow,
+        };
+
+        if (chooser.ShowDialog() != true)
+        {
+            Status = "Scan cancelled.";
+            return;
+        }
+
+        var roots = chooser.SelectedRoots;
+
         IsScanning = true;
         _scanCancellation = new CancellationTokenSource();
         var token = _scanCancellation.Token;
@@ -433,23 +464,27 @@ public sealed class SecurityViewModel : ViewModelBase
 
         try
         {
-            var drives = string.Join(", ", SentinelService.FixedDriveRoots());
+            var names = string.Join(", ", roots.Select(r => r.TrimEnd('\\')));
 
             ScanIsCounting = true;
             ScanProgress = 0;
-            Status = $"Counting the files on {drives}\u2026";
+            ScanDetail = "";
+            Status = $"Counting the files on {names}\u2026 you can stop at any time.";
 
-            int total = await Task.Run(() => _sentinel.EnumerateEverything().Count(), token)
-                .ConfigureAwait(true);
+            // Counting is cancellable, and has to be: on a machine with several drives
+            // it is the part that takes minutes, and Stop doing nothing during it made
+            // the button look broken exactly when someone would reach for it.
+            int total = await Task.Run(
+                () => _sentinel.EnumerateDrives(roots, token).Count(), token).ConfigureAwait(true);
 
             ScanTotal = total;
             ScanIsCounting = false;
 
-            Status = $"Scanning {total:N0} files on {drives}. You can keep using the machine, " +
+            Status = $"Scanning {total:N0} files on {names}. You can keep using the machine, " +
                      "and you can stop at any time.";
 
             await foreach (var verdict in _sentinel
-                .ScanFilesAsync(_sentinel.EnumerateEverything(), token)
+                .ScanFilesAsync(_sentinel.EnumerateDrives(roots, token), token)
                 .ConfigureAwait(true))
             {
                 scanned++;
@@ -473,14 +508,16 @@ public sealed class SecurityViewModel : ViewModelBase
             var took = Clock(DateTimeOffset.Now - started);
 
             Status = notable == 0
-                ? $"Full scan finished: {scanned:N0} files in {took}. Nothing worth flagging."
-                : $"Full scan finished: {scanned:N0} files in {took}, {notable} worth a look. " +
+                ? $"Finished: {scanned:N0} files on {names} in {took}. Nothing worth flagging."
+                : $"Finished: {scanned:N0} files on {names} in {took}, {notable} worth a look. " +
                   "Nothing was changed \u2014 read the reasons and decide for yourself.";
         }
         catch (OperationCanceledException)
         {
             completed = false;
-            Status = $"Full scan stopped after {scanned:N0} files. Nothing was changed.";
+            Status = scanned == 0
+                ? "Stopped before scanning started. Nothing was changed."
+                : $"Stopped after {scanned:N0} files. What was found is below; nothing was changed.";
         }
         finally
         {
@@ -491,8 +528,7 @@ public sealed class SecurityViewModel : ViewModelBase
             _scanCancellation = null;
             RefreshFindings();
 
-            Record(ScanKind.FullDisk, string.Join(", ", SentinelService.FixedDriveRoots()),
-                started, scanned, notable, completed);
+            Record(ScanKind.FullDisk, string.Join(", ", roots), started, scanned, notable, completed);
         }
     }
 
