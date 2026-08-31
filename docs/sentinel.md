@@ -291,14 +291,22 @@ disable it, another tool can hold the session — and a crash leaves the session
 so a stale one is cleared by name at every start. Without that, one hard kill would
 cost the feature until the machine was rebooted.
 
-**On verification:** the fallback path is tested — unelevated, `TryStart` returns false
-cleanly, nothing throws, and the log explains the downgrade. The ETW path itself could
-not be exercised on the machine this was written on, because starting a kernel session
-requires elevation and the development shell does not have it. What *was* confirmed is
-that the library loads and reaches the real session call from a single-file
-self-contained build, which is the shipping configuration. The manual checklist has a
-step for confirming the rest, and until someone runs it the honest statement is that
-this half is unproven rather than proven.
+**On verification:** both paths are now confirmed. The fallback was tested unelevated
+(`TryStart` returns false cleanly, nothing throws, the log explains the downgrade),
+and the session itself was confirmed on a real elevated run, which logged
+"Behaviour monitoring is using ETW".
+
+That first real run also found a bug this had reintroduced. ETW carries the image
+*name* and no directory, so `conhost.exe` arrived where a path was expected; it is not
+empty, so the guard against unknown paths let it through, and a Windows system process
+was reported as masquerading with a blank directory in the message. The rule now
+requires a rooted path, and the name travels in its own field so that losing the path
+does not silently disable every rule that matches on the name.
+
+Resolving that path is bounded to eight probes. Unbounded it cost 7ms per process
+start on an unresolvable long command line, on the thread that has to keep up with the
+kernel — and falling behind there drops events, which is a missed detection with
+nothing in any log to say so.
 
 ## Checking the checks
 

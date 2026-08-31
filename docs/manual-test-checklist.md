@@ -232,9 +232,9 @@ logic; everything below is the part that talks to the OS.
 
 ## 8a. Behaviour monitoring (ETW)
 
-This is the one part of the module that could not be verified during development:
-starting an ETW kernel session needs elevation, and the development shell did not
-have it. Nexus itself runs elevated, so these steps close that gap.
+Confirmed working on a real elevated run (the log reports "Behaviour monitoring is
+using ETW"). These steps re-check it after changes, and cover the parts that only
+appear over time -- restart behaviour and session cleanup.
 
 - [ ] With protection on, Security → Protection shows **Behaviour monitoring** as
       "Watching every process launch, including very short-lived ones (ETW)". If it
