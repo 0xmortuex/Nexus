@@ -120,9 +120,14 @@ public sealed class ScannerHost : IDisposable
 
             if (response.Error is { Length: > 0 } error)
             {
-                // Not a failure worth alarming anyone about: unreadable and oversized
-                // files are ordinary. It just means this engine had no opinion.
-                _log.Info("Sentinel", $"{Path.GetFileName(path)}: {error}");
+                // An empty file, or one too big to read, is not news. Logging each one
+                // buried the report: a single scan produced 1,070 of these against 418
+                // lines of everything else, so 72% of the log was a list of browser
+                // journal files being zero bytes long. A log that has to be filtered to
+                // be read is a log nobody reads.
+                if (!IsRoutine(error))
+                    _log.Info("Sentinel", $"{Path.GetFileName(path)}: {error}");
+
                 return ([], new HashSet<SignalSource>());
             }
 
@@ -142,6 +147,16 @@ public sealed class ScannerHost : IDisposable
             _gate.Release();
         }
     }
+
+    /// <summary>
+    /// Conditions that are simply the ordinary shape of a disk rather than anything
+    /// that happened. They still mean this engine had no opinion; they just do not
+    /// need saying once per file.
+    /// </summary>
+    private static bool IsRoutine(string error) =>
+        error.Contains("file is empty", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("too large", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("could not be read", StringComparison.OrdinalIgnoreCase);
 
     private async Task<ScanResponse?> ExchangeAsync(string path, CancellationToken cancellationToken)
     {

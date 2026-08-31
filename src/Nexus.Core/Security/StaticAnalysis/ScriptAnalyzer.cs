@@ -90,7 +90,7 @@ public static class ScriptAnalyzer
             return signals;
         }
 
-        AddObfuscationSignals(text, lower, signals);
+        AddObfuscationSignals(text, lower, signals, kind);
         AddDownloadAndRunSignals(lower, signals);
         AddPersistenceSignals(lower, signals);
 
@@ -149,14 +149,25 @@ public static class ScriptAnalyzer
     /// <summary>
     /// Blank out the contents of quoted strings, keeping the quotes so the shape of the
     /// surrounding code is unchanged.
+    ///
+    /// PowerShell's escapes have to be honoured or the parse runs off the rails: inside
+    /// a double-quoted string a backtick escapes the next character, so `" is a quote
+    /// *within* the string and not the end of it. Missing that made npm.ps1 look as
+    /// though it had loose backticks in bare command text, when every one was inside
+    /// "& `"$NODE_EXE`"".
+    ///
+    /// Single-quoted strings have no backtick escape at all; a literal quote is written
+    /// by doubling it.
     /// </summary>
     private static string StripQuotedStrings(string text)
     {
         var builder = new System.Text.StringBuilder(text.Length);
         char quote = '\0';
 
-        foreach (char c in text)
+        for (int i = 0; i < text.Length; i++)
         {
+            char c = text[i];
+
             if (quote == '\0')
             {
                 if (c == '"' || c == '\'')
@@ -166,13 +177,28 @@ public static class ScriptAnalyzer
                 continue;
             }
 
+            // Inside a double-quoted string a backtick escapes whatever follows,
+            // including a quote. Skip both so the string does not appear to end.
+            if (quote == '"' && c == '`' && i + 1 < text.Length)
+            {
+                i++;
+                continue;
+            }
+
+            // Inside a single-quoted string, '' is a literal quote rather than the end.
+            if (quote == '\'' && c == '\'' && i + 1 < text.Length && text[i + 1] == '\'')
+            {
+                i++;
+                continue;
+            }
+
             if (c == quote)
             {
                 quote = '\0';
                 builder.Append(c);
             }
 
-            // Everything between the quotes is dropped.
+            // Everything else between the quotes is dropped.
         }
 
         return builder.ToString();
@@ -249,7 +275,7 @@ public static class ScriptAnalyzer
     {
         var observations = new List<SecuritySignal>();
 
-        AddObfuscationSignals(text, lower, observations);
+        AddObfuscationSignals(text, lower, observations, ScriptKind.PowerShell);
         AddDownloadAndRunSignals(lower, observations);
         AddPersistenceSignals(lower, observations);
 
@@ -290,7 +316,7 @@ public static class ScriptAnalyzer
     {
         var observations = new List<SecuritySignal>();
 
-        AddObfuscationSignals(text, lower, observations);
+        AddObfuscationSignals(text, lower, observations, ScriptKind.JavaScript);
         AddDownloadAndRunSignals(lower, observations);
         AddPersistenceSignals(lower, observations);
 
@@ -416,6 +442,36 @@ public static class ScriptAnalyzer
         }
     }
 
+    /// <summary>
+    /// Backticks that are actually doing obfuscation: not inside a string, and not a
+    /// line continuation.
+    /// </summary>
+    private static int CountObfuscationBackticks(string text)
+    {
+        var bare = StripQuotedStrings(text);
+
+        int count = 0;
+
+        for (int i = 0; i < bare.Length; i++)
+        {
+            if (bare[i] != '`')
+                continue;
+
+            // A backtick at the end of a line continues the statement; every
+            // multi-line PowerShell script in the world is full of them.
+            int j = i + 1;
+            while (j < bare.Length && (bare[j] == ' ' || bare[j] == '\t'))
+                j++;
+
+            if (j >= bare.Length || bare[j] == '\r' || bare[j] == '\n')
+                continue;
+
+            count++;
+        }
+
+        return count;
+    }
+
     /// <summary>Decode bytes as text, honouring a BOM. Scripts are commonly UTF-16 on
     /// Windows, and reading one as UTF-8 turns it into unreadable noise that every
     /// keyword check then misses.</summary>
@@ -522,7 +578,8 @@ public static class ScriptAnalyzer
 
     // ---- Obfuscation ----
 
-    private static void AddObfuscationSignals(string text, string lower, List<SecuritySignal> signals)
+    private static void AddObfuscationSignals(
+        string text, string lower, List<SecuritySignal> signals, ScriptKind kind)
     {
         if (lower.Contains("frombase64string", StringComparison.Ordinal)
             || lower.Contains("-encodedcommand", StringComparison.Ordinal)
@@ -550,15 +607,30 @@ public static class ScriptAnalyzer
         }
 
         // PowerShell backtick escaping used mid-word, e.g. i`e`x
-        int backticks = CountOccurrences(text, "`");
-        if (backticks >= 10)
+        //
+        // Counting every backtick in the file was wrong, and wrong on exactly the files
+        // people have. A backtick is also the line-continuation character and the escape
+        // inside double-quoted strings, so npm.ps1 -- which ships with Node -- was
+        // reported for "16 escape characters", every one of them a `" quoting a path or
+        // a doubled `` inside a .Replace call. Not one was mid-word.
+        //
+        // Strings and line continuations are removed first, so what is counted is
+        // backticks sitting in bare command text, which is where breaking a keyword up
+        // actually happens.
+        // PowerShell only. A backtick is an escape character there; in batch it is
+        // command substitution, and nodevars.bat -- which ships with Node -- was
+        // reported for `for /F "usebackq" %%v in (`%print_version%`)`, which is just
+        // how batch spells that.
+        int backticks = kind == ScriptKind.PowerShell ? CountObfuscationBackticks(text) : 0;
+        if (backticks >= 2)
         {
             signals.Add(new SecuritySignal(
                 SignalSource.StaticRules,
                 SignalWeight.Moderate,
                 "script-escape-obfuscation",
-                $"This script uses {backticks} escape characters, which is a common way to break up " +
-                "keywords so they are harder to spot."));
+                $"This script has {backticks} escape characters sitting in the middle of commands, " +
+                "outside any string. That is a common way to break a keyword up so it is harder to " +
+                "spot."));
         }
 
         if (lower.Contains("invoke-expression", StringComparison.Ordinal)
@@ -566,9 +638,17 @@ public static class ScriptAnalyzer
             || lower.Contains("eval(", StringComparison.Ordinal)
             || lower.Contains("executeglobal", StringComparison.Ordinal))
         {
+            // Weak, because it needs corroboration to mean anything. Launcher shims
+            // build a command and run it as a matter of course -- npm.ps1, which ships
+            // with Node and sits on every developer's machine, does exactly
+            // `Invoke-Expression "& `"$NODE_EXE`" ..."`. At Moderate that plus
+            // "unsigned" cleared the alert threshold on its own.
+            //
+            // Nothing is lost on the cases that matter: running code you just
+            // downloaded is script-download-and-run, which is Strong by itself.
             signals.Add(new SecuritySignal(
                 SignalSource.StaticRules,
-                SignalWeight.Moderate,
+                SignalWeight.Weak,
                 "script-runs-constructed-code",
                 "This script runs text it builds while running, so the file does not show what will " +
                 "actually execute."));
