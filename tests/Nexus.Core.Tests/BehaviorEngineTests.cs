@@ -265,6 +265,29 @@ public class BehaviorEngineTests
         Assert.Contains("beh-lolbin-powershell-hidden", finding.Signals.Select(s => s.Code));
     }
 
+    /// <summary>
+    /// Observed on a real ETW run: a process started as "cmd.exe /c exit" resolved to
+    /// the bare name "cmd.exe", because File.Exists checks it against the current
+    /// directory. It looks resolved and is not, and cmd.exe is in the system-image
+    /// catalogue, so treating it as a path would report the shell as masquerading.
+    /// </summary>
+    [Fact]
+    public void A_relative_name_resolved_against_the_working_directory_is_not_a_path()
+    {
+        var evt = new ProcessStartEvent
+        {
+            Pid = 1000,
+            ParentPid = 900,
+            ImageFileName = "cmd.exe",
+            ImagePath = "cmd.exe",
+            CommandLine = "cmd.exe /c exit",
+            At = Now,
+        };
+
+        Assert.DoesNotContain("beh-masquerade",
+            new BehaviorEngine().Observe(evt)?.Signals.Select(s => s.Code) ?? []);
+    }
+
     /// <summary>A genuine masquerade — a real path in the wrong place — must still be
     /// caught. The fix narrows the rule; it does not switch it off.</summary>
     [Fact]

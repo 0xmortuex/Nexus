@@ -204,7 +204,14 @@ public sealed class EtwProcessWatcher : IDisposable
         // unresolvable long command line otherwise costs milliseconds of file-system
         // probing. The program's own path sits at the front; past the first few
         // spaces it is all arguments.
-        return ScanTargeting.ExtractImagePath(trimmed, File.Exists, MaxPathProbes) ?? "";
+        var resolved = ScanTargeting.ExtractImagePath(trimmed, File.Exists, MaxPathProbes) ?? "";
+
+        // Only a rooted path is an answer. File.Exists resolves a bare name against
+        // the current directory, so "cmd.exe /c exit" comes back as "cmd.exe" -- which
+        // looks resolved and is not. Handing that on as a path is the same category
+        // confusion that had conhost.exe reported as masquerading, and this is the
+        // place to stop it rather than relying on every rule downstream to re-check.
+        return PathHelpers.IsRooted(resolved) ? resolved : "";
     }
 
     /// <summary>
