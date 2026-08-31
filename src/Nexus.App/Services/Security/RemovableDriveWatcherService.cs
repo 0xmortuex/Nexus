@@ -40,6 +40,14 @@ public sealed class RemovableDriveWatcherService : IDisposable
     private readonly Func<string, int, CancellationToken, Task<int>> _scanDrive;
     private readonly HashSet<string> _known = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Guards <see cref="_known"/>. Stop() can return while a drive scan is still
+    /// running — scanning 20,000 files takes longer than the shutdown wait — so the
+    /// watch loop and a caller on the UI thread really can touch this set at the same
+    /// moment, and HashSet is not safe for that.
+    /// </summary>
+    private readonly object _gate = new();
+
     private CancellationTokenSource _shutdown = new();
     private Task? _loop;
     private bool _running;
@@ -66,8 +74,11 @@ public sealed class RemovableDriveWatcherService : IDisposable
         // Everything already plugged in at startup counts as known. Scanning the
         // stick that has been in the machine for a week, every time Nexus starts, is
         // noise — the point is to catch the moment something new arrives.
-        foreach (var root in RemovableRoots())
-            _known.Add(root);
+        lock (_gate)
+        {
+            foreach (var root in RemovableRoots())
+                _known.Add(root);
+        }
 
         _running = true;
         _loop = Task.Run(() => WatchAsync(_shutdown.Token));
@@ -86,17 +97,24 @@ public sealed class RemovableDriveWatcherService : IDisposable
                 await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
 
                 var current = RemovableRoots();
+                var arrived = new List<string>();
 
-                // Forget drives that have been removed, so re-inserting one scans again.
-                _known.RemoveWhere(root => !current.Contains(root));
-
-                foreach (var root in current)
+                lock (_gate)
                 {
-                    if (!_known.Add(root))
-                        continue;
+                    // Forget drives that have been removed, so re-inserting one scans again.
+                    _known.RemoveWhere(root => !current.Contains(root));
 
-                    await ScanNewDriveAsync(root, cancellationToken).ConfigureAwait(false);
+                    foreach (var root in current)
+                    {
+                        if (_known.Add(root))
+                            arrived.Add(root);
+                    }
                 }
+
+                // Scanning happens outside the lock: it takes minutes, and holding a
+                // lock across it would block Stop() for the whole scan.
+                foreach (var root in arrived)
+                    await ScanNewDriveAsync(root, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -187,7 +205,9 @@ public sealed class RemovableDriveWatcherService : IDisposable
         {
             _shutdown.Dispose();
             _loop = null;
-            _known.Clear();
+
+            lock (_gate)
+                _known.Clear();
         }
 
         _log.Info("Sentinel", "Stopped watching for USB drives.");

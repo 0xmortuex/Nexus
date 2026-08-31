@@ -407,6 +407,73 @@ public class ArchiveInspectorTests
         Assert.Equal("archive-script-download-and-run", Assert.Single(signals).Code);
     }
 
+    /// <summary>
+    /// Every entry seen costs budget, not only the ones whose contents were read.
+    /// Counting after the skips let an archive of a million empty or undecodable
+    /// entries walk its whole directory without the cap ever tripping — each one
+    /// still costing a traversal check and a ratio check.
+    /// </summary>
+    [Fact]
+    public void Entries_that_are_skipped_still_cost_budget()
+    {
+        var budget = new ArchiveInspector.ArchiveBudget();
+
+        // All empty, so every one hits the zero-length skip.
+        var empties = Enumerable.Range(0, 50).Select(i => Entry($"empty{i}.txt", 0, 0));
+
+        ArchiveInspector.InspectEntries(empties, static (_, _) => [], budget);
+
+        Assert.Equal(50, budget.EntriesExamined);
+    }
+
+    [Fact]
+    public void An_archive_of_empty_entries_still_stops_at_the_cap()
+    {
+        var budget = new ArchiveInspector.ArchiveBudget();
+
+        var many = Enumerable.Range(0, ArchiveInspector.MaxEntries * 3)
+            .Select(i => Entry($"empty{i}.txt", 0, 0));
+
+        var signals = ArchiveInspector.InspectEntries(many, static (_, _) => [], budget);
+
+        Assert.Equal(ArchiveInspector.MaxEntries, budget.EntriesExamined);
+        Assert.Contains(signals, s => s.Code == "archive-not-fully-examined");
+    }
+
+    /// <summary>
+    /// A compressed size of zero means the format did not report one. 7-Zip's solid
+    /// compression never does, and briefly treating that as an infinite ratio flagged
+    /// every 7z archive as a bomb -- and because a flagged entry is skipped, it hid the
+    /// dropper inside one. An unknown ratio stays unknown; the real defence against
+    /// expansion is the byte caps, enforced on bytes actually read.
+    /// </summary>
+    [Fact]
+    public void An_unreported_compressed_size_is_not_treated_as_a_bomb()
+    {
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry("solid.bin", 100_000_000, 0)], static (_, _) => []);
+
+        Assert.DoesNotContain(signals, s => s.Code == "archive-zip-bomb");
+    }
+
+    [Fact]
+    public void A_genuine_expansion_ratio_is_still_a_bomb()
+    {
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry("bomb.bin", 100_000_000, 1000)], static (_, _) => []);
+
+        Assert.Contains(signals, s => s.Code == "archive-zip-bomb");
+    }
+
+    [Fact]
+    public void An_ordinary_ratio_is_still_not_a_bomb()
+    {
+        var signals = ArchiveInspector.InspectEntries(
+            [Entry("normal.txt", 1000, 400)], static (_, _) => []);
+
+        Assert.DoesNotContain(signals, s => s.Code == "archive-zip-bomb");
+    }
+
     // ---- The shared limits apply to every format ----
 
     private static ArchiveInspector.ArchiveEntryView Entry(

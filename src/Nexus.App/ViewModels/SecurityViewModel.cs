@@ -142,7 +142,8 @@ public sealed class SecurityViewModel : ViewModelBase
         CheckConnectionsCommand = new RelayCommand(CheckConnections);
         QuickScanCommand = new RelayCommand(async _ => await QuickScanAsync(), _ => !IsScanning);
         RevokeTrustCommand = new RelayCommand(p => RevokeTrust(p as TrustedFileRow));
-        ToggleProtectionCommand = new RelayCommand(ToggleProtection);
+        ToggleProtectionCommand = new RelayCommand(
+            async _ => await ToggleProtectionAsync(), _ => !IsTogglingProtection);
         AddExclusionCommand = new RelayCommand(AddExclusion);
         RemoveExclusionCommand = new RelayCommand(p => RemoveExclusion(p as ExclusionRow));
         BrowseExclusionCommand = new RelayCommand(BrowseForExclusion);
@@ -239,20 +240,56 @@ public sealed class SecurityViewModel : ViewModelBase
         ? "Turn protection OFF"
         : "Turn protection ON";
 
-    private void ToggleProtection()
+    /// <summary>
+    /// Turn protection on or off.
+    ///
+    /// Done off the UI thread, because stopping is not instant: the watchers wait for
+    /// their background loops to unwind, and a USB scan or an ETW pump mid-work can
+    /// hold that up for seconds. Run inline, that froze the window at exactly the
+    /// moment the user had just clicked something — which is when they are most
+    /// likely to click again.
+    /// </summary>
+    private async Task ToggleProtectionAsync()
     {
-        if (_sentinel.IsProtectionOn)
-        {
-            _sentinel.StopProtection();
-            Status = "Protection is off. Nothing is being watched. Turn it back on whenever you like.";
-        }
-        else
-        {
-            _sentinel.StartProtection();
-            Status = "Protection is on.";
-        }
+        bool turningOff = _sentinel.IsProtectionOn;
 
-        RefreshProtection();
+        Status = turningOff ? "Turning protection off…" : "Turning protection on…";
+        IsTogglingProtection = true;
+
+        try
+        {
+            if (turningOff)
+                await Task.Run(_sentinel.StopProtection).ConfigureAwait(true);
+            else
+                await Task.Run(_sentinel.StartProtection).ConfigureAwait(true);
+
+            Status = turningOff
+                ? "Protection is off. Nothing is being watched. Turn it back on whenever you like."
+                : "Protection is on.";
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not change protection: {ex.Message}";
+        }
+        finally
+        {
+            IsTogglingProtection = false;
+            RefreshProtection();
+        }
+    }
+
+    private bool _isTogglingProtection;
+
+    /// <summary>True while the switch is being thrown, so the button can be disabled
+    /// rather than letting a second click race the first.</summary>
+    public bool IsTogglingProtection
+    {
+        get => _isTogglingProtection;
+        private set
+        {
+            if (Set(ref _isTogglingProtection, value))
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
     }
 
     private void RefreshProtectionState()

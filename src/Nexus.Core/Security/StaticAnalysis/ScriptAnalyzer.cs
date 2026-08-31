@@ -80,7 +80,11 @@ public static class ScriptAnalyzer
             return signals;
         }
 
-        if (kind == ScriptKind.PowerShellData)
+        // A .psd1 is only given the data-file treatment if it actually looks like one.
+        // The extension alone is not a guarantee of anything: `powershell -File x.psd1`
+        // and dot-sourcing both run it as an ordinary script, so renaming a dropper to
+        // .psd1 would otherwise have bought it a free downgrade to zero points.
+        if (kind == ScriptKind.PowerShellData && LooksLikeModuleManifest(text))
         {
             AddDataFileObservations(text, lower, signals);
             return signals;
@@ -91,6 +95,137 @@ public static class ScriptAnalyzer
         AddPersistenceSignals(lower, signals);
 
         return signals;
+    }
+
+    /// <summary>
+    /// True when the text really is a module manifest: comments, then a single
+    /// hashtable literal, and nothing that evaluates while it is being read.
+    ///
+    /// The earlier version of this trusted the extension, and the extension proves
+    /// nothing. `powershell -File payload.psd1` runs the file as an ordinary script;
+    /// the restricted data-only parsing people associate with .psd1 belongs to
+    /// `Import-PowerShellDataFile`, not to the name. Without this check, renaming a
+    /// dropper to .psd1 dropped its score by 35 points for free.
+    ///
+    /// `$(...)` is refused for the same reason: a subexpression inside the hashtable
+    /// still runs when the file is dot-sourced, so a file containing one is not the
+    /// inert data this exemption is meant for.
+    /// </summary>
+    public static bool LooksLikeModuleManifest(string text)
+    {
+        var stripped = StripPowerShellComments(text).Trim();
+
+        if (stripped.Length < 3 || !stripped.StartsWith("@{", StringComparison.Ordinal)
+            || !stripped.EndsWith("}", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // The real difference between a manifest and a script that has been renamed is
+        // where the cmdlet names sit. A manifest only ever *quotes* them, in export
+        // lists: CmdletsToExport = "Invoke-Expression", "Invoke-WebRequest". A script
+        // invokes them as bare commands. So the quoted strings are removed and only
+        // what is left counts.
+        //
+        // Rejecting "@(" outright, as an earlier attempt did, broke every genuine
+        // manifest: CompatiblePSEditions = @('Desktop') is an array literal and appears
+        // in the one that ships with Windows.
+        var code = StripQuotedStrings(stripped);
+
+        if (code.Contains("$(", StringComparison.Ordinal) || code.Contains('&'))
+            return false;
+
+        var lower = code.ToLowerInvariant();
+
+        return !lower.Contains("invoke-expression", StringComparison.Ordinal)
+               && !ContainsWholeToken(lower, "iex")
+               && !lower.Contains("invoke-webrequest", StringComparison.Ordinal)
+               && !lower.Contains("invoke-restmethod", StringComparison.Ordinal)
+               && !lower.Contains("downloadstring", StringComparison.Ordinal)
+               && !lower.Contains("start-process", StringComparison.Ordinal)
+               && !lower.Contains("new-object", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Blank out the contents of quoted strings, keeping the quotes so the shape of the
+    /// surrounding code is unchanged.
+    /// </summary>
+    private static string StripQuotedStrings(string text)
+    {
+        var builder = new System.Text.StringBuilder(text.Length);
+        char quote = '\0';
+
+        foreach (char c in text)
+        {
+            if (quote == '\0')
+            {
+                if (c == '"' || c == '\'')
+                    quote = c;
+
+                builder.Append(c);
+                continue;
+            }
+
+            if (c == quote)
+            {
+                quote = '\0';
+                builder.Append(c);
+            }
+
+            // Everything between the quotes is dropped.
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Remove block and line comments so the shape check sees the code.</summary>
+    private static string StripPowerShellComments(string text)
+    {
+        var builder = new System.Text.StringBuilder(text.Length);
+        bool inBlock = false;
+
+        foreach (var rawLine in text.Split('\n'))
+        {
+            var line = rawLine;
+
+            while (true)
+            {
+                if (inBlock)
+                {
+                    int close = line.IndexOf("#>", StringComparison.Ordinal);
+                    if (close < 0)
+                    {
+                        line = "";
+                        break;
+                    }
+
+                    line = line[(close + 2)..];
+                    inBlock = false;
+                    continue;
+                }
+
+                int open = line.IndexOf("<#", StringComparison.Ordinal);
+                if (open >= 0)
+                {
+                    var head = line[..open];
+                    line = line[(open + 2)..];
+                    inBlock = true;
+
+                    builder.Append(head);
+                    continue;
+                }
+
+                break;
+            }
+
+            int hash = line.IndexOf('#');
+            if (hash >= 0)
+                line = line[..hash];
+
+            builder.Append(line).Append('\n');
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>

@@ -57,6 +57,13 @@ public sealed class ScheduledScanService : IDisposable
     // source, and whichever finishes first clearing the flag for both.
     private readonly SingleFlightGate _gate = new();
     private CancellationTokenSource? _running;
+
+    /// <summary>
+    /// The scan currently in flight, if any. Held so Dispose can wait for it: the
+    /// app disposes this service and then SentinelService, and a scan still running
+    /// would be calling into a scanner that was being torn down underneath it.
+    /// </summary>
+    private Task? _inFlight;
     private bool _disposed;
 
     public ScheduledScanService(
@@ -175,12 +182,12 @@ public sealed class ScheduledScanService : IDisposable
 
             if (FullScanIsDue(DateTimeOffset.Now))
             {
-                _ = RunFullScanAsync();
+                _inFlight = RunFullScanAsync();
                 return;
             }
 
             if (_settings.Current.Security.ScheduledQuickScan)
-                _ = RunAsync();
+                _inFlight = RunAsync();
         }
         catch (Exception ex)
         {
@@ -357,5 +364,22 @@ public sealed class ScheduledScanService : IDisposable
 
         _timer?.Dispose();
         _timer = null;
+
+        // Wait for a scan that is already running. The app disposes this service and
+        // then SentinelService, so returning early would leave a scan calling into a
+        // scanner process that is being shut down underneath it.
+        try
+        {
+            _inFlight?.Wait(TimeSpan.FromSeconds(10));
+        }
+        catch (Exception ex) when (ex is AggregateException or OperationCanceledException
+                                      or ObjectDisposedException)
+        {
+            // The scan's own error handling already logged whatever went wrong.
+        }
+        finally
+        {
+            _inFlight = null;
+        }
     }
 }

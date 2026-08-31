@@ -189,6 +189,12 @@ public static class ArchiveInspector
                 break;
             }
 
+            // Counted here, before any of the skips below. Counting only entries whose
+            // contents were read let an archive of a million empty or undecodable
+            // entries walk the whole directory without ever exhausting the budget:
+            // every one still costs a traversal check and a bomb-ratio check.
+            budget.EntriesExamined++;
+
             if (entry.UncompressedLength == 0)
                 continue;
 
@@ -228,7 +234,6 @@ public static class ArchiveInspector
                 continue;
 
             budget.BytesExpanded += content.Length;
-            budget.EntriesExamined++;
 
             if (IsExecutableName(entry.Name))
                 executableNames.Add(entry.Name);
@@ -275,6 +280,21 @@ public static class ArchiveInspector
                           char.ToLowerInvariant(signal.Explanation[0]) + signal.Explanation[1..],
         };
 
+    /// <summary>
+    /// An entry claiming to expand far beyond its stored size.
+    ///
+    /// A compressed size of zero means the format did not report one, not that the
+    /// entry expands out of nothing. 7-Zip's solid compression gives no per-entry
+    /// compressed size at all, so treating zero as an infinite ratio flagged every
+    /// single 7z archive as a bomb — and, because a flagged entry is skipped, it hid
+    /// the very payload the scan was looking for. That was measured, not theorised: a
+    /// 7z containing a known dropper came back reporting only "archive-zip-bomb".
+    ///
+    /// So an unknown ratio stays unknown. The defence against actual expansion is not
+    /// this label anyway — it is MaxEntryBytes and MaxTotalUncompressedBytes, which
+    /// are enforced against bytes genuinely read rather than against anything the
+    /// archive claims about itself.
+    /// </summary>
     private static bool IsZipBomb(ArchiveEntryView entry) =>
         entry.CompressedLength > 0
         && entry.UncompressedLength / entry.CompressedLength > MaxCompressionRatio;

@@ -24,7 +24,7 @@ public static class ScanTargeting
         var extension = Path.GetExtension(path).ToLowerInvariant();
 
         return extension is ".exe" or ".dll" or ".sys" or ".scr" or ".ocx" or ".cpl" or ".drv"
-            or ".com" or ".pif" or ".bat" or ".cmd" or ".ps1" or ".psm1" or ".vbs" or ".vbe"
+            or ".com" or ".pif" or ".bat" or ".cmd" or ".ps1" or ".psm1" or ".psd1" or ".vbs" or ".vbe"
             or ".js" or ".jse" or ".wsf" or ".wsh" or ".hta" or ".msi" or ".msp" or ".jar"
             or ".lnk" or ".reg" or "";
     }

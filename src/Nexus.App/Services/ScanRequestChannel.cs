@@ -26,6 +26,9 @@ public sealed class ScanRequestChannel : IDisposable
     /// <summary>A path longer than Windows allows is not a path, it is a probe.</summary>
     private const int MaxRequestLength = 4096;
 
+    /// <summary>How long one connection may take to send its line before it is dropped.</summary>
+    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(5);
+
     private readonly ActivityLog _log;
     private readonly Action<string> _onRequest;
     private CancellationTokenSource _shutdown = new();
@@ -65,6 +68,39 @@ public sealed class ScanRequestChannel : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether a path that arrived over the pipe may be scanned.
+    ///
+    /// The pipe's default security restricts it to this user, which keeps other people
+    /// on the machine out. It does not keep out an unprivileged process running as this
+    /// user, and Nexus is elevated -- so whatever arrives here is a path an ordinary
+    /// process, including malware with no rights of its own, can make an administrator
+    /// open.
+    ///
+    /// Reading a local file is what the feature is for. Reaching out to a UNC path is
+    /// not: it would make the elevated process authenticate to a server the sender
+    /// chose, which is the setup for an NTLM relay and has nothing to do with checking
+    /// a file the user right-clicked.
+    /// </summary>
+    private static bool IsAcceptablePath(string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path.Trim());
+
+            // UNC, and the device forms that can be aimed at one.
+            if (full.StartsWith(@"\\", StringComparison.Ordinal))
+                return false;
+
+            return Path.IsPathRooted(full);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+                                      or PathTooLongException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
     public void Start()
     {
         _shutdown = new CancellationTokenSource();
@@ -84,9 +120,25 @@ public sealed class ScanRequestChannel : IDisposable
                 await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
 
                 using var reader = new StreamReader(server);
-                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
 
-                if (line is { Length: > 0 and <= MaxRequestLength })
+                // A connection that never sends a line would otherwise hold the single
+                // server instance forever, and every later "Scan with Nexus" would fail
+                // to connect and be told Nexus is already running. One local process
+                // opening the pipe and going quiet must not cost the whole feature.
+                using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                readTimeout.CancelAfter(ReadTimeout);
+
+                string? line;
+                try
+                {
+                    line = await reader.ReadLineAsync(readTimeout.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    continue;
+                }
+
+                if (line is { Length: > 0 and <= MaxRequestLength } && IsAcceptablePath(line))
                     _onRequest(line);
             }
             catch (OperationCanceledException)

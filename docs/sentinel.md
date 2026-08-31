@@ -150,11 +150,29 @@ Everything the obfuscation rules noticed is still recorded and still shown when 
 finding is opened. It is just worth zero points, so it cannot turn an ordinary file
 into an alert on its own.
 
-The cost of this is real and worth stating: a malicious npm package that shells out
-via `child_process` will not be caught by static analysis here, because legitimate
-build tooling does the same thing constantly. That is a genuine gap, accepted
-knowingly. The alternative — a thousand findings a developer learns to dismiss — is
-not a safer tool, only a louder one.
+The cost is real and worth stating plainly. A malicious npm package that shells out
+via `child_process` will not be caught here, because legitimate build tooling does the
+same thing constantly. Neither will a small hand-written `eval(atob(...))` dropper.
+Both are genuine gaps, accepted knowingly.
+
+The obvious objection is that the exemption should apply only to *minified* files, or
+only to *large* ones, so a tiny hand-written dropper still scores. That was measured
+against the same real project rather than argued about:
+
+| If small non-minified JS were scored | Files newly flagged |
+|---|---|
+| under 1 KB | 194 |
+| under 2 KB | 420 |
+| under 4 KB | 638 |
+
+Every sampled example was lodash — `compact.js`, `curry.js`, `defaultTo.js` —
+flagged for the `\u` escapes in their own doc comments. Restricting the exemption to
+minified files is worse again: only 2,140 of 18,867 `.js` files in that project are
+minified, so 16,727 would be graded by rules already shown not to discriminate.
+
+The alternative to accepting the gap is a thousand findings a developer learns to
+dismiss, which is not a safer tool, only a louder one. What does still catch a `.js`
+file meant to run on Windows is the Windows Script Host surface above.
 
 `ArchiveStaticEngine` looks inside ZIP, 7z, RAR, tar, gzip, bzip2 and xz, because that
 is how most malware arrives and a scanner that stops at the container reports

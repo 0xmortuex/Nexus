@@ -219,7 +219,33 @@ public sealed class BrowserExtensionService
     /// </summary>
     private string? ReadLocalisedName(string versionDirectory, string locale, string key)
     {
-        var path = Path.Combine(versionDirectory, "_locales", locale, "messages.json");
+        // The locale comes out of the extension's own manifest, which is precisely the
+        // attacker-controlled input this feature exists to inspect. Path.Combine throws
+        // away everything before a rooted segment, so a manifest declaring
+        // "default_locale": "C:\\Users\\someone\\secrets" -- or a run of ".." -- would
+        // otherwise send this elevated process off to read a file anywhere on the disk
+        // and print part of it back into the UI as the extension's name.
+        var localesRoot = Path.GetFullPath(Path.Combine(versionDirectory, "_locales"));
+        string path;
+
+        try
+        {
+            path = Path.GetFullPath(Path.Combine(localesRoot, locale, "messages.json"));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            // Not a usable path fragment at all.
+            return null;
+        }
+
+        // Must still be inside the extension's own _locales directory.
+        if (!path.StartsWith(localesRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            _log.Info("Sentinel",
+                $"Ignored a browser extension whose manifest points its locale outside its own " +
+                $"folder ({locale}).");
+            return null;
+        }
 
         try
         {

@@ -77,6 +77,18 @@ public class ScanTargetingTests
     }
 
     /// <summary>
+    /// ScriptAnalyzer has a whole code path for PowerShell module manifests, and it was
+    /// unreachable from a folder scan because .psd1 was missing from this list. A file
+    /// type an engine has an opinion about has to survive the filter that decides which
+    /// files are opened at all.
+    /// </summary>
+    [Fact]
+    public void Powershell_data_files_are_worth_scanning()
+    {
+        Assert.True(ScanTargeting.IsWorthScanning(@"C:\module\Thing.psd1"));
+    }
+
+    /// <summary>
     /// The probe bound exists for the ETW watcher, which resolves a path for every
     /// process start on the trace pump thread. Measured on a real machine, an
     /// unresolvable 120-space command line cost 7ms unbounded; falling behind there

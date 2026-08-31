@@ -1058,8 +1058,20 @@ public sealed class SentinelService : IDisposable
 
     private void StopConnectionPolling()
     {
-        _connectionPoll?.Dispose();
+        // Timer.Dispose() does not wait for a callback that is already running, so a
+        // poll in flight could still raise an alert after StopProtection() had logged
+        // "Protection is OFF". The WaitHandle overload blocks until the callback has
+        // finished, which is what makes that log line true.
+        var poll = _connectionPoll;
         _connectionPoll = null;
+
+        if (poll is null)
+            return;
+
+        using var finished = new ManualResetEvent(false);
+
+        if (poll.Dispose(finished))
+            finished.WaitOne(TimeSpan.FromSeconds(5));
     }
 
     /// <summary>
@@ -1100,7 +1112,9 @@ public sealed class SentinelService : IDisposable
                 EnginesConsulted = new HashSet<SignalSource> { SignalSource.Behavior },
             }, DateTimeOffset.Now);
 
-            if (verdict.WarrantsAlert)
+            // Checked again here rather than only at the top: this method runs on a
+            // timer thread and protection can be switched off while it is working.
+            if (verdict.WarrantsAlert && IsProtectionOn)
                 Report(verdict, origin: "network watch");
         }
         catch (Exception ex)

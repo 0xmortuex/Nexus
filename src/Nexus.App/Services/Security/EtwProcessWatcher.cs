@@ -50,6 +50,14 @@ public sealed class EtwProcessWatcher : IDisposable
     private readonly ActivityLog _log;
     private readonly BehaviorEngine _engine;
 
+    /// <summary>
+    /// Incremented every time the watcher is stopped. The pump thread captures the
+    /// value it started with, so a pump that outlived its Join — possible when the
+    /// ETW session does not stop promptly — stops raising findings instead of
+    /// competing with the pump of a later start.
+    /// </summary>
+    private int _generation;
+
     private TraceEventSession? _session;
     private Thread? _pump;
     private volatile bool _running;
@@ -90,8 +98,10 @@ public sealed class EtwProcessWatcher : IDisposable
                 StopOnDispose = true,
             };
 
+            int generation = _generation;
+
             _session.EnableKernelProvider(KernelTraceEventParser.Keywords.Process);
-            _session.Source.Kernel.ProcessStart += OnProcessStart;
+            _session.Source.Kernel.ProcessStart += data => OnProcessStart(data, generation);
 
             // Source.Process() blocks until the session stops, so it needs its own
             // thread. Background, so a stuck ETW pump can never hold up shutdown.
@@ -142,8 +152,13 @@ public sealed class EtwProcessWatcher : IDisposable
         }
     }
 
-    private void OnProcessStart(ProcessTraceData data)
+    private void OnProcessStart(ProcessTraceData data, int generation)
     {
+        // A pump from a previous start that never shut down must go quiet rather
+        // than keep feeding the engine alongside the current one.
+        if (generation != _generation)
+            return;
+
         try
         {
             // ETW carries the short image name and no directory, so the name goes in
@@ -241,6 +256,7 @@ public sealed class EtwProcessWatcher : IDisposable
             return;
 
         _running = false;
+        Interlocked.Increment(ref _generation);
 
         try
         {
