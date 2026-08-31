@@ -40,6 +40,13 @@ public sealed class EtwProcessWatcher : IDisposable
     /// </summary>
     private const string SessionName = "NexusSentinelProcessWatch";
 
+    /// <summary>
+    /// Prefixes tested when working a path out of a command line. Enough for
+    /// "C:\Program Files\Some Vendor\app.exe" and well short of the thousands of
+    /// probes a long argument list would otherwise trigger on the pump thread.
+    /// </summary>
+    private const int MaxPathProbes = 8;
+
     private readonly ActivityLog _log;
     private readonly BehaviorEngine _engine;
 
@@ -193,7 +200,11 @@ public sealed class EtwProcessWatcher : IDisposable
         if (trimmed.StartsWith(@"\??\", StringComparison.Ordinal))
             trimmed = trimmed[4..];
 
-        return ScanTargeting.ExtractImagePath(trimmed, File.Exists) ?? "";
+        // Bounded: this runs on the ETW pump thread for every process start, and an
+        // unresolvable long command line otherwise costs milliseconds of file-system
+        // probing. The program's own path sits at the front; past the first few
+        // spaces it is all arguments.
+        return ScanTargeting.ExtractImagePath(trimmed, File.Exists, MaxPathProbes) ?? "";
     }
 
     /// <summary>

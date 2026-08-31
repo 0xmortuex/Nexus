@@ -76,6 +76,50 @@ public class ScanTargetingTests
             ScanTargeting.ExtractImagePath(@"C:\Tools\app.exe -x", Filesystem(@"C:\Tools\app.exe")));
     }
 
+    /// <summary>
+    /// The probe bound exists for the ETW watcher, which resolves a path for every
+    /// process start on the trace pump thread. Measured on a real machine, an
+    /// unresolvable 120-space command line cost 7ms unbounded; falling behind there
+    /// makes the kernel drop events, and detections vanish with nothing in any log.
+    /// </summary>
+    [Fact]
+    public void Probing_stops_at_the_limit_rather_than_walking_the_whole_command_line()
+    {
+        int probes = 0;
+        var counting = (string _) => { probes++; return false; };
+
+        var command = "app.exe " + string.Join(" ", Enumerable.Range(0, 200).Select(i => $"--opt{i}"));
+
+        Assert.Null(ScanTargeting.ExtractImagePath(command, counting, maxProbes: 8));
+        Assert.Equal(8, probes);
+    }
+
+    /// <summary>The bound must not cost an ordinary "C:\Program Files\..." path,
+    /// which is the whole reason the shortest-first walk exists.</summary>
+    [Fact]
+    public void A_program_files_path_still_resolves_within_the_limit()
+    {
+        const string target = @"C:\Program Files\Some Vendor\app.exe";
+
+        Assert.Equal(target,
+            ScanTargeting.ExtractImagePath(target + " --flag", Filesystem(target), maxProbes: 8));
+    }
+
+    /// <summary>
+    /// Bounded or not, the shortest prefix still wins. That ordering mirrors the
+    /// Windows loader, and it is exactly why a planted C:\Program.exe hijacks an
+    /// unquoted service path -- the audit has to see what the loader would see.
+    /// </summary>
+    [Fact]
+    public void The_shortest_matching_prefix_still_wins_under_the_limit()
+    {
+        Assert.Equal(@"C:\Program",
+            ScanTargeting.ExtractImagePath(
+                @"C:\Program Files\App\app.exe -x",
+                Filesystem(@"C:\Program", @"C:\Program Files\App\app.exe"),
+                maxProbes: 8));
+    }
+
     [Fact]
     public void An_unquoted_path_with_spaces_resolves_to_the_real_executable()
     {

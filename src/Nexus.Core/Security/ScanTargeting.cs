@@ -69,7 +69,21 @@ public static class ScanTargeting
     /// </summary>
     /// <param name="exists">Existence probe, injected so the parsing is testable
     /// without a filesystem.</param>
-    public static string? ExtractImagePath(string command, Func<string, bool> exists)
+    /// <param name="maxProbes">
+    /// How many prefixes may be tested before giving up. Unbounded by default, which
+    /// suits the autorun audit: it runs once, on a handful of entries.
+    ///
+    /// It does not suit a caller on a hot path. Each probe is a file-system hit, and
+    /// measured on a real machine an unresolvable 120-space command line cost 7ms
+    /// — per process start, on the ETW pump thread, where falling behind means the
+    /// kernel drops events and detections are missed with nothing in any log to say
+    /// so. Command lines that long are real: the user's own log had makensis.exe at
+    /// 2,024 characters.
+    ///
+    /// A bound is safe because the executable's own path is at the front. Anything
+    /// past the first few spaces is arguments, not the program.
+    /// </param>
+    public static string? ExtractImagePath(string command, Func<string, bool> exists, int maxProbes = int.MaxValue)
     {
         var trimmed = command.Trim();
         if (trimmed.Length == 0)
@@ -85,8 +99,14 @@ public static class ScanTargeting
         // "C:\Program Files\App\app.exe -x" resolves rather than stopping at
         // "C:\Program". The loader probes in this same order, shortest first, which
         // is precisely why a stray C:\Program.exe wins over the intended target.
+        // That ordering is security-relevant and the bound below must not disturb it.
+        int probes = 0;
+
         for (int i = trimmed.IndexOf(' '); i >= 0; i = trimmed.IndexOf(' ', i + 1))
         {
+            if (probes++ >= maxProbes)
+                return null;
+
             var candidate = trimmed[..i];
             if (exists(candidate))
                 return candidate;
