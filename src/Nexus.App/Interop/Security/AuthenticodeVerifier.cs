@@ -103,7 +103,17 @@ public sealed class AuthenticodeVerifier
         _checkRevocation = checkRevocation;
     }
 
-    public SignatureInfo Verify(string filePath)
+    /// <param name="searchCatalogs">
+    /// Whether to fall back to the catalog store when the file carries no signature of
+    /// its own.
+    ///
+    /// That search is the expensive half — it hashes the whole file and walks every
+    /// catalog on the machine — and it can only ever turn "unsigned" into "signed",
+    /// which is exonerating. For a file nothing else has flagged, the verdict is the
+    /// same either way, so the search buys nothing. Callers that have not found
+    /// anything can skip it and ask again if they do.
+    /// </param>
+    public SignatureInfo Verify(string filePath, bool searchCatalogs = true)
     {
         if (!OperatingSystem.IsWindows())
             return SignatureInfo.Unknown;
@@ -135,6 +145,24 @@ public sealed class AuthenticodeVerifier
 
                 state = second;
             }
+            else if (!LooksLikeTheFormatItsNameImplies(filePath))
+            {
+                // Windows picks how to verify a file partly from its extension. A file
+                // whose contents are not the format its name implies gets checked by
+                // the wrong reader, and the digest mismatch that follows says nothing
+                // about whether anyone modified it.
+                //
+                // Adobe Acrobat ships six of these: RSA BSAFE FIPS modules that are OLE
+                // compound files named .dll. All six verified as "signed by Adobe Inc.,
+                // but the contents no longer match", twice over, and all six are
+                // perfectly intact. What is actually notable about them -- that a .dll
+                // is not an executable -- is reported separately and accurately.
+                _log.Info("Sentinel",
+                    $"{Path.GetFileName(filePath)} is not the kind of file its extension claims, so " +
+                    "its signature could not be checked properly. Not reporting it as modified.");
+
+                state = SignatureState.Unknown;
+            }
         }
 
         string? catalogPath = null;
@@ -145,7 +173,7 @@ public sealed class AuthenticodeVerifier
         // alike. Without this fallback the strongest exoneration Nexus has —
         // "signed by Microsoft" — never fires for the operating system, and every
         // full scan reports thousands of Windows files as unsigned.
-        if (state == SignatureState.Unsigned)
+        if (state == SignatureState.Unsigned && searchCatalogs)
         {
             var (catalogState, foundIn) = VerifyThroughCatalog(filePath);
             if (catalogState != SignatureState.Unsigned)
@@ -167,6 +195,40 @@ public sealed class AuthenticodeVerifier
             NotAfter = notAfter,
             IsMicrosoft = state == SignatureState.Valid && LooksLikeMicrosoft(signer),
         };
+    }
+
+    /// <summary>
+    /// Whether the file's first bytes match what its extension claims.
+    ///
+    /// Only asked when a signature comes back as modified, and only to decide whether
+    /// that answer can be trusted. Anything unrecognised is treated as "cannot tell",
+    /// which keeps a genuinely modified executable reported as one.
+    /// </summary>
+    private static bool LooksLikeTheFormatItsNameImplies(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+
+        bool claimsExecutable = extension is ".exe" or ".dll" or ".sys" or ".ocx" or ".cpl"
+            or ".scr" or ".drv" or ".com" or ".efi";
+
+        if (!claimsExecutable)
+            return true;
+
+        try
+        {
+            using var stream = File.OpenRead(path);
+
+            Span<byte> header = stackalloc byte[2];
+            if (stream.Read(header) < 2)
+                return true;
+
+            return header[0] == (byte)'M' && header[1] == (byte)'Z';
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Could not look; do not use that as a reason to dismiss the finding.
+            return true;
+        }
     }
 
     private SignatureState RunWinVerifyTrust(string filePath)

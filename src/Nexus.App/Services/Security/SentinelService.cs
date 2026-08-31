@@ -318,17 +318,34 @@ public sealed class SentinelService : IDisposable
         // file and searching catalogs, while the worker is off reading the same file in
         // another process. Run one after the other and a file costs the sum; run them
         // together and it costs the slower of the two.
-        var signatureTask = Task.Run(() => _signatures.Verify(path), cancellationToken);
+        // Skip the catalog search on the first pass. It is the expensive half of a
+        // signature check \u2014 it hashes the whole file and walks every catalog on the
+        // machine \u2014 and all it can do is turn "unsigned" into "signed", which only
+        // matters if something else flagged the file. Most files flag nothing, and for
+        // those the verdict is identical either way.
+        var signatureTask = Task.Run(
+            () => _signatures.Verify(path, searchCatalogs: false), cancellationToken);
+
         var staticTask = _scanner.ScanAsync(path, cancellationToken);
 
         var signature = await signatureTask.ConfigureAwait(false);
+        var (staticSignals, staticEngines) = await staticTask.ConfigureAwait(false);
+
+        // Now that the static engines have spoken, decide whether the catalog is worth
+        // asking about: only if this file would otherwise be reported, where being
+        // signed by Microsoft is exactly what stops a false alarm.
+        if (signature.State == SignatureState.Unsigned
+            && (staticSignals.Count > 0 || reputation.Count > 0))
+        {
+            signature = _signatures.Verify(path, searchCatalogs: true);
+        }
+
         if (signature.State != SignatureState.Unknown)
         {
             signals.AddRange(AuthenticodeVerifier.ToSignals(signature));
             engines.Add(SignalSource.CodeSignature);
         }
 
-        var (staticSignals, staticEngines) = await staticTask.ConfigureAwait(false);
         signals.AddRange(staticSignals);
         foreach (var engine in staticEngines)
             engines.Add(engine);

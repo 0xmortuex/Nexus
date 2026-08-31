@@ -472,6 +472,22 @@ public static class ScriptAnalyzer
         return count;
     }
 
+    /// <summary>
+    /// Whether the script runs text or bytes it produced at runtime, rather than
+    /// merely producing them.
+    /// </summary>
+    private static bool RunsWhatItBuilds(string lower) =>
+        lower.Contains("invoke-expression", StringComparison.Ordinal)
+        || ContainsWholeToken(lower, "iex")
+        || lower.Contains("start-process", StringComparison.Ordinal)
+        || lower.Contains("[reflection.assembly]::load", StringComparison.Ordinal)
+        || lower.Contains("[system.reflection.assembly]::load", StringComparison.Ordinal)
+        || lower.Contains(".invoke(", StringComparison.Ordinal)
+        || lower.Contains("eval(", StringComparison.Ordinal)
+        || lower.Contains("new-object system.io.memorystream", StringComparison.Ordinal)
+        || lower.Contains("wscript.shell", StringComparison.Ordinal)
+        || lower.Contains(".run(", StringComparison.Ordinal);
+
     /// <summary>Decode bytes as text, honouring a BOM. Scripts are commonly UTF-16 on
     /// Windows, and reading one as UTF-8 turns it into unreadable noise that every
     /// keyword check then misses.</summary>
@@ -581,10 +597,25 @@ public static class ScriptAnalyzer
     private static void AddObfuscationSignals(
         string text, string lower, List<SecuritySignal> signals, ScriptKind kind)
     {
-        if (lower.Contains("frombase64string", StringComparison.Ordinal)
-            || lower.Contains("-encodedcommand", StringComparison.Ordinal)
-            || lower.Contains("[convert]::frombase64", StringComparison.Ordinal)
-            || lower.Contains("atob(", StringComparison.Ordinal))
+        // Decoding base64 is not, by itself, anything. Scripts decode certificates,
+        // stored passwords, embedded images and binary blobs all day. What matters is
+        // decoding and then *running* the result.
+        //
+        // The rule used to fire on the decode alone while the message said "and runs
+        // the result" -- a claim nothing had checked. LAPS.psm1, Microsoft's own
+        // password-management module shipping in System32, was reported Strong for
+        // `[Convert]::FromBase64String($Base64)`, which produces bytes and executes
+        // nothing.
+        bool decodes = lower.Contains("frombase64string", StringComparison.Ordinal)
+                       || lower.Contains("[convert]::frombase64", StringComparison.Ordinal)
+                       || lower.Contains("atob(", StringComparison.Ordinal);
+
+        // -EncodedCommand is different: the encoded text *is* the command, so there is
+        // nothing further to look for.
+        bool encodedCommand = lower.Contains("-encodedcommand", StringComparison.Ordinal)
+                              || ContainsWholeToken(lower, "-enc");
+
+        if (encodedCommand || (decodes && RunsWhatItBuilds(lower)))
         {
             signals.Add(new SecuritySignal(
                 SignalSource.StaticRules,
@@ -592,6 +623,16 @@ public static class ScriptAnalyzer
                 "script-base64-payload",
                 "This script decodes base64 and runs the result, so what it actually does is not " +
                 "visible in the file."));
+        }
+        else if (decodes)
+        {
+            signals.Add(new SecuritySignal(
+                SignalSource.StaticRules,
+                SignalWeight.Informational,
+                "script-base64-decode",
+                "This script decodes base64 data. That is ordinary on its own \u2014 certificates, " +
+                "stored credentials and embedded binaries all arrive that way \u2014 and nothing here " +
+                "runs the decoded result."));
         }
 
         if (CountOccurrences(lower, "[char]") >= 8

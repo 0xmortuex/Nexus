@@ -161,6 +161,67 @@ public class ScriptAnalyzerTests
         Assert.Contains("script-escape-obfuscation", Codes(obfuscated, ScriptKind.PowerShell));
     }
 
+    /// <summary>
+    /// LAPS.psm1 -- Microsoft's own password-management module, shipping in System32 --
+    /// was reported Strong for "decodes base64 and runs the result". It does
+    /// `[Convert]::FromBase64String($Base64)` to get bytes and runs nothing at all. The
+    /// rule fired on the decode alone while its message claimed something no check had
+    /// verified.
+    /// </summary>
+    [Fact]
+    public void Decoding_base64_without_running_it_is_not_a_payload()
+    {
+        const string laps = """
+            function ConvertFrom-Base64 {
+                param([string]$Base64)
+                $bytes = [System.Convert]::FromBase64String($Base64)
+                return [System.Text.Encoding]::Unicode.GetString($bytes)
+            }
+            """;
+
+        var codes = Codes(laps, ScriptKind.PowerShell);
+
+        Assert.DoesNotContain("script-base64-payload", codes);
+        Assert.Contains("script-base64-decode", codes);
+    }
+
+    [Fact]
+    public void Merely_decoding_base64_is_worth_nothing()
+    {
+        var signal = Assert.Single(
+            ScriptAnalyzer.Analyse("$b = [Convert]::FromBase64String($x)", ScriptKind.PowerShell),
+            s => s.Code == "script-base64-decode");
+
+        Assert.Equal(0, signal.Points);
+    }
+
+    /// <summary>Decoding and then running it is the thing the rule is for.</summary>
+    [Fact]
+    public void Decoding_base64_and_running_it_is_still_strong()
+    {
+        const string dropper =
+            "$p = [Convert]::FromBase64String($blob); Invoke-Expression ([Text.Encoding]::UTF8.GetString($p))";
+
+        var signal = Assert.Single(
+            ScriptAnalyzer.Analyse(dropper, ScriptKind.PowerShell),
+            s => s.Code == "script-base64-payload");
+
+        Assert.Equal(SignalWeight.Strong, signal.Weight);
+    }
+
+    /// <summary>-EncodedCommand needs no corroboration: the encoded text is the
+    /// command, so there is nothing further to look for.</summary>
+    [Fact]
+    public void An_encoded_command_line_is_strong_on_its_own()
+    {
+        var signal = Assert.Single(
+            ScriptAnalyzer.Analyse(
+                "powershell.exe -nop -w hidden -EncodedCommand SQBFAFgA", ScriptKind.PowerShell),
+            s => s.Code == "script-base64-payload");
+
+        Assert.Equal(SignalWeight.Strong, signal.Weight);
+    }
+
     [Fact]
     public void Non_scripts_are_not_analysed()
     {

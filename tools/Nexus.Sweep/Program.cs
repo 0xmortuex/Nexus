@@ -151,13 +151,8 @@ public static class Program
         var signals = new List<SecuritySignal>();
         var engines = new HashSet<SignalSource>();
 
-        var signature = verifier.Verify(path);
-        if (signature.State != SignatureState.Unknown)
-        {
-            signals.AddRange(AuthenticodeVerifier.ToSignals(signature));
-            engines.Add(SignalSource.CodeSignature);
-        }
-
+        // Static analysis first, then the signature -- mirroring the product, which
+        // skips the catalog search unless something has actually been flagged.
         try
         {
             var bytes = File.ReadAllBytes(path);
@@ -184,6 +179,20 @@ public static class Program
             signals.AddRange(workerSignals);
             foreach (var engine in workerEngines)
                 engines.Add(engine);
+        }
+
+        // The catalog search only ever exonerates, so it is worth its cost only when
+        // something would otherwise be reported.
+        bool anythingFlagged = signals.Any(s => s.Points > 0);
+        var signature = verifier.Verify(path, searchCatalogs: false);
+
+        if (signature.State == SignatureState.Unsigned && anythingFlagged)
+            signature = verifier.Verify(path, searchCatalogs: true);
+
+        if (signature.State != SignatureState.Unknown)
+        {
+            signals.AddRange(AuthenticodeVerifier.ToSignals(signature));
+            engines.Add(SignalSource.CodeSignature);
         }
 
         return VerdictEngine.Evaluate(new VerdictInput
