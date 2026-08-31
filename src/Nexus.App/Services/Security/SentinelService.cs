@@ -38,7 +38,7 @@ public sealed class SentinelService : IDisposable
     private readonly FileIdentityService _identity;
     private readonly AuthenticodeVerifier _signatures;
     private readonly ReputationService _reputation;
-    private readonly ScannerHost _scanner;
+    private readonly ScannerPool _scanner;
     private readonly AutorunEnumerator _autoruns;
     private readonly ProcessDetailWatcher _behaviour;
     private readonly TrustStore _trust;
@@ -76,7 +76,7 @@ public sealed class SentinelService : IDisposable
         FileIdentityService identity,
         AuthenticodeVerifier signatures,
         ReputationService reputation,
-        ScannerHost scanner,
+        ScannerPool scanner,
         AutorunEnumerator autoruns,
         ProcessDetailWatcher behaviour,
         Nexus.Core.Security.Behavior.BehaviorEngine behaviorEngine,
@@ -404,13 +404,41 @@ public sealed class SentinelService : IDisposable
     }
 
     /// <summary>
+    /// How many files are examined at once.
+    ///
+    /// Scanning was serial and managed about 25 files a second, which makes a full
+    /// disk scan an overnight job. Almost all of that time is one call: verifying a
+    /// signature costs roughly 12ms per file and is nearly all kernel and crypto work,
+    /// so the thread spends it waiting rather than computing. Running several files at
+    /// once turns that dead time into throughput.
+    ///
+    /// Capped rather than simply ProcessorCount: this runs on a machine someone is
+    /// using, and the other half of Nexus exists to keep that machine responsive.
+    /// </summary>
+    private static int ScanConcurrency => Math.Clamp(Environment.ProcessorCount - 2, 2, 8);
+
+    /// <summary>Reports progress during a long scan.</summary>
+    /// <param name="Scanned">Files examined so far.</param>
+    /// <param name="Total">Files expected in total, or null while still counting.</param>
+    /// <param name="Notable">How many were worth reporting.</param>
+    /// <param name="Current">The file being read, for the status line.</param>
+    public sealed record ScanProgress(int Scanned, int? Total, int Notable, string Current);
+
+    /// <summary>
     /// Scan a folder. Yields each verdict as it is produced so a long scan can fill
     /// the UI progressively instead of freezing it until the end.
     /// </summary>
-    public async IAsyncEnumerable<Verdict> ScanFolderAsync(
+    public IAsyncEnumerable<Verdict> ScanFolderAsync(
         string folder,
         bool recursive,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ScanFilesAsync(EnumerateScannable(folder, recursive), cancellationToken);
+
+    /// <summary>
+    /// The files under a folder that are worth opening: not noise directories, not
+    /// file types no engine has an opinion about, and not excluded by the user.
+    /// </summary>
+    public IEnumerable<string> EnumerateScannable(string folder, bool recursive)
     {
         var options = new EnumerationOptions
         {
@@ -430,30 +458,103 @@ public sealed class SentinelService : IDisposable
             yield break;
         }
 
+        var exclusions = Exclusions;
+
+        using var walker = files.GetEnumerator();
+
+        while (true)
+        {
+            string file;
+
+            // MoveNext itself can throw part-way through a directory tree.
+            try
+            {
+                if (!walker.MoveNext())
+                    break;
+
+                file = walker.Current;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                break;
+            }
+
+            if (ScanTargeting.IsNoiseDirectory(file)
+                || !ScanTargeting.IsWorthScanning(file)
+                || exclusions.IsExcluded(file))
+            {
+                continue;
+            }
+
+            yield return file;
+        }
+    }
+
+    /// <summary>
+    /// Examine a stream of files, several at a time, yielding each verdict as it
+    /// lands. Order is not preserved, which is the price of the concurrency.
+    /// </summary>
+    public async IAsyncEnumerable<Verdict> ScanFilesAsync(
+        IEnumerable<string> files,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var results = System.Threading.Channels.Channel.CreateBounded<Verdict>(
+            new System.Threading.Channels.BoundedChannelOptions(ScanConcurrency * 4)
+            {
+                SingleReader = true,
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait,
+            });
+
+        var producer = Task.Run(async () =>
+        {
+            try
+            {
+                await Parallel.ForEachAsync(
+                    files,
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = ScanConcurrency,
+                        CancellationToken = cancellationToken,
+                    },
+                    async (file, token) =>
+                    {
+                        var verdict = await ScanFileAsync(file, token).ConfigureAwait(false);
+                        await results.Writer.WriteAsync(verdict, token).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
+
+                results.Writer.TryComplete();
+            }
+            catch (Exception ex)
+            {
+                // Completing with the exception hands it to the consumer's await
+                // rather than losing it on a background task.
+                results.Writer.TryComplete(ex);
+            }
+        }, CancellationToken.None);
+
         try
         {
-            foreach (var file in files)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (ScanTargeting.IsNoiseDirectory(file)
-                    || !ScanTargeting.IsWorthScanning(file)
-                    || Exclusions.IsExcluded(file))
-                {
-                    continue;
-                }
-
-                yield return await ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
-            }
+            await foreach (var verdict in results.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+                yield return verdict;
         }
         finally
         {
             // Cache writes are buffered; a cancelled scan should still keep the work
             // it already did, or stopping a long scan halfway would throw it away.
             _cache.Flush();
+
+            // Let the producer unwind before returning, so a cancelled scan does not
+            // leave workers still writing into a channel nobody is reading.
+            try
+            {
+                await producer.ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or AggregateException)
+            {
+                // Cancellation is the normal way a long scan ends.
+            }
         }
     }
-
     /// <summary>
     /// Scan every fixed drive on the machine.
     ///

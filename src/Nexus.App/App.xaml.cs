@@ -189,7 +189,9 @@ public partial class App : System.Windows.Application
         var baselineBuilder = new KnownGoodBaselineService(log, paths, signatures, fileIdentity);
         var hashFeeds = new HashFeedImportService(log, paths);
         var reputation = new ReputationService(log, paths);
-        var scannerHost = new ScannerHost(log);
+        // One worker per concurrent scan slot. A single worker would become the
+        // queue every parallel file waits in.
+        var scannerHost = new ScannerPool(log, Math.Clamp(Environment.ProcessorCount - 2, 2, 8));
         var autoruns = new AutorunEnumerator(log, signatures);
         // Told its own name so the helper processes Nexus launches — schtasks for the
         // autostart task, PowerShell for the Defender query — are reported as its own
@@ -360,6 +362,7 @@ public partial class App : System.Windows.Application
                 _log?.Error("App", $"Cleanup error: {ex.Message}");
             }
         }
+        Interop.Security.AuthenticodeVerifier.ReleaseCatalogContexts();
         _scanRequests?.Dispose();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);

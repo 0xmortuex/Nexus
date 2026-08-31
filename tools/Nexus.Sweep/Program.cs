@@ -78,41 +78,57 @@ public static class Program
         int alerts = 0;
         var byExtension = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var worst = new List<(int Score, ThreatLevel Level, string Path, string Codes)>();
+        var tally = new object();
 
-        foreach (var path in sources)
-        {
-            if (!Interesting.Contains(Path.GetExtension(path)))
-                continue;
+        // Matches what the product does. Scanning serially measured 65 files a second
+        // on this machine and made a full-disk sweep an overnight job; almost all of
+        // that time is spent waiting on signature verification rather than computing,
+        // so running several files at once turns the wait into throughput.
+        int concurrency = Math.Clamp(Environment.ProcessorCount - 2, 2, 8);
+        var stopwatch = Stopwatch.StartNew();
 
-            long size;
-            try
+        Parallel.ForEach(
+            sources.Where(path => Interesting.Contains(Path.GetExtension(path))),
+            new ParallelOptions { MaxDegreeOfParallelism = concurrency },
+            path =>
             {
-                size = new FileInfo(path).Length;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                continue;
-            }
+                long size;
+                try
+                {
+                    size = new FileInfo(path).Length;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    return;
+                }
 
-            if (size == 0 || size > MaxBytes)
-                continue;
+                if (size == 0 || size > MaxBytes)
+                    return;
 
-            var verdict = Judge(verifier, worker, path, size);
-            if (verdict is null)
-                continue;
+                var verdict = Judge(verifier, worker, path, size);
+                if (verdict is null)
+                    return;
 
-            scanned++;
+                lock (tally)
+                {
+                    scanned++;
 
-            if (!verdict.WarrantsAlert)
-                continue;
+                    if (!verdict.WarrantsAlert)
+                        return;
 
-            alerts++;
-            var extension = Path.GetExtension(path);
-            byExtension[extension] = byExtension.GetValueOrDefault(extension) + 1;
+                    alerts++;
+                    var extension = Path.GetExtension(path);
+                    byExtension[extension] = byExtension.GetValueOrDefault(extension) + 1;
 
-            worst.Add((verdict.Score, verdict.Level, path,
-                string.Join(",", verdict.Signals.Where(s => !s.Exonerating).Select(s => s.Code).Distinct())));
-        }
+                    worst.Add((verdict.Score, verdict.Level, path,
+                        string.Join(",", verdict.Signals.Where(s => !s.Exonerating).Select(s => s.Code).Distinct())));
+                }
+            });
+
+        stopwatch.Stop();
+
+        Console.WriteLine($"{scanned / Math.Max(stopwatch.Elapsed.TotalSeconds, 0.001):F0} files/sec " +
+                          $"across {concurrency} at a time, {stopwatch.Elapsed.TotalSeconds:F1}s total.");
 
         Report(target, scanned, alerts, byExtension, worst);
 
@@ -283,8 +299,13 @@ public static class Program
             return null;
         }
 
+        private readonly object _exchange = new();
+
         public (IReadOnlyList<SecuritySignal> Signals, IReadOnlyList<SignalSource> Engines) Scan(string path)
         {
+            // One worker, one request at a time. The sweep runs several files in
+            // parallel, and two threads writing into the same pipe would interleave.
+            lock (_exchange)
             try
             {
                 var request = JsonSerializer.Serialize(

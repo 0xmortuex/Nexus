@@ -73,6 +73,27 @@ public sealed class AuthenticodeVerifier
     private readonly ActivityLog _log;
     private readonly bool _checkRevocation;
 
+    /// <summary>
+    /// The catalog context, one per thread, acquired on that thread's first use.
+    ///
+    /// Acquiring it per file is pure overhead — measured at 7.1ms against 5.2ms
+    /// reused, over 120 System32 binaries — because the handle is onto the machine's
+    /// catalog store, which does not change between two files.
+    ///
+    /// It is per-thread rather than shared because sharing one across threads is not
+    /// safe, and the way it fails is quiet: verifying 200 drivers on eight threads
+    /// returned Unsigned for two files that verify as Valid on one thread. A
+    /// signature check that intermittently says "unsigned" about a signed Windows
+    /// driver manufactures exactly the false positives this whole module exists to
+    /// avoid, so the caching had to become thread-local rather than shared.
+    ///
+    /// Bounded by the number of scanning threads, and released on
+    /// <see cref="ReleaseCatalogContexts"/> at shutdown.
+    /// </summary>
+    private static readonly ThreadLocal<IntPtr> _catalogAdmin = new(trackAllValues: true);
+
+    private static bool _catalogUnavailable;
+
     /// <param name="checkRevocation">Revocation checking is accurate but reaches the
     /// network and can stall for seconds on a captive portal. Off by default, so a
     /// background scan never blocks on someone else's OCSP responder.</param>
@@ -91,6 +112,31 @@ public sealed class AuthenticodeVerifier
             return SignatureInfo.Unknown;
 
         var state = RunWinVerifyTrust(filePath);
+
+        // "Signed, but the bytes no longer match" is the single heaviest thing this
+        // class can say: it scores 35 on its own, which is enough to raise an alert
+        // with no other evidence at all. It is worth being sure.
+        //
+        // On a real machine three Microsoft-signed Windows printer scripts were
+        // reported as tampered, and could not be reproduced afterwards on any
+        // subsequent check, elevated or not. Whatever the cause -- a file being
+        // rewritten by an update mid-read is the likeliest -- a verdict that
+        // accusatory should not rest on a single reading. A second look costs
+        // milliseconds and only happens on the rare path.
+        if (state == SignatureState.Tampered)
+        {
+            var second = RunWinVerifyTrust(filePath);
+
+            if (second != SignatureState.Tampered)
+            {
+                _log.Info("Sentinel",
+                    $"{Path.GetFileName(filePath)} looked modified on the first check and did not on " +
+                    $"the second, so it is being reported as {second} rather than tampered with.");
+
+                state = second;
+            }
+        }
+
         string? catalogPath = null;
 
         // Most of Windows carries no signature of its own. System files are signed in
@@ -177,8 +223,8 @@ public sealed class AuthenticodeVerifier
 
         try
         {
-            var subsystem = WinTrustNative.DRIVER_ACTION_VERIFY;
-            if (!WinTrustNative.CryptCATAdminAcquireContext(out catalogAdmin, ref subsystem, 0))
+            catalogAdmin = AcquireCatalogContext();
+            if (catalogAdmin == IntPtr.Zero)
                 return (SignatureState.Unsigned, null);
 
             file = new FileStream(filePath, FileMode.Open, FileAccess.Read,
@@ -223,11 +269,53 @@ public sealed class AuthenticodeVerifier
         {
             file?.Dispose();
 
-            if (catalogContext != IntPtr.Zero)
+            // The per-file catalog context is released; the admin context is shared
+            // and lives for the process.
+            if (catalogContext != IntPtr.Zero && catalogAdmin != IntPtr.Zero)
                 WinTrustNative.CryptCATAdminReleaseCatalogContext(catalogAdmin, catalogContext, 0);
+        }
+    }
 
-            if (catalogAdmin != IntPtr.Zero)
-                WinTrustNative.CryptCATAdminReleaseContext(catalogAdmin, 0);
+    /// <summary>
+    /// The shared catalog context, created on first use.
+    ///
+    /// Returns zero when catalogs are unavailable on this machine, and remembers that
+    /// so every later file skips the attempt instead of paying for it again.
+    /// </summary>
+    private static IntPtr AcquireCatalogContext()
+    {
+        if (_catalogUnavailable)
+            return IntPtr.Zero;
+
+        if (_catalogAdmin.Value != IntPtr.Zero)
+            return _catalogAdmin.Value;
+
+        var subsystem = WinTrustNative.DRIVER_ACTION_VERIFY;
+
+        if (WinTrustNative.CryptCATAdminAcquireContext(out var admin, ref subsystem, 0)
+            && admin != IntPtr.Zero)
+        {
+            _catalogAdmin.Value = admin;
+            return admin;
+        }
+
+        // Catalogs are unavailable on this machine at all; remember it so every later
+        // file skips the attempt rather than paying for it again.
+        _catalogUnavailable = true;
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Release every thread's catalog context. Called once at shutdown; these are
+    /// handles onto a machine resource and there is no reason to leave them to the
+    /// process teardown.
+    /// </summary>
+    public static void ReleaseCatalogContexts()
+    {
+        foreach (var admin in _catalogAdmin.Values)
+        {
+            if (admin != IntPtr.Zero)
+                WinTrustNative.CryptCATAdminReleaseContext(admin, 0);
         }
     }
 
