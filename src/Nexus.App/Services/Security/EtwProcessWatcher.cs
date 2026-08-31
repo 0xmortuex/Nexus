@@ -2,6 +2,8 @@ using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 using Microsoft.Diagnostics.Tracing.Session;
 using Nexus.Core.Logging;
+using System.IO;
+using Nexus.Core.Security;
 using Nexus.Core.Security.Behavior;
 
 namespace Nexus.App.Services.Security;
@@ -137,14 +139,21 @@ public sealed class EtwProcessWatcher : IDisposable
     {
         try
         {
+            // ETW carries the short image name and no directory, so the name goes in
+            // ImageFileName and the path is resolved separately. Putting the bare name
+            // in ImagePath is what made every path-based rule read "conhost.exe" as a
+            // path and conclude it was not in System32.
+            var commandLine = data.CommandLine ?? "";
+
             // Nexus's own helpers are excluded inside BehaviorEngine, which is told
             // Nexus's process name at construction; nothing extra is needed here.
             var evt = new ProcessStartEvent
             {
                 Pid = data.ProcessID,
                 ParentPid = data.ParentID,
-                ImagePath = data.ImageFileName ?? "",
-                CommandLine = data.CommandLine ?? "",
+                ImageFileName = data.ImageFileName,
+                ImagePath = ResolveImagePath(commandLine),
+                CommandLine = commandLine,
                 ParentImagePath = "",
                 At = data.TimeStamp,
             };
@@ -159,6 +168,32 @@ public sealed class EtwProcessWatcher : IDisposable
             // an escape would end the process.
             _log.Info("Sentinel", $"Skipped a process event: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Work out where the image actually lives, from the command line.
+    ///
+    /// ETW gives no path, and asking the operating system for one is a race the
+    /// short-lived processes this watcher exists to catch would usually win. The
+    /// command line normally begins with the full path, so that is parsed instead,
+    /// using the same resolver the autorun audit uses.
+    ///
+    /// Returning empty when it cannot be worked out is the correct answer, not a
+    /// failure: the rules that need a path already treat "unknown" as no evidence.
+    /// </summary>
+    private static string ResolveImagePath(string commandLine)
+    {
+        if (commandLine.Length == 0)
+            return "";
+
+        // The kernel writes NT-style paths for some processes; conhost.exe arrives as
+        // \??\C:\WINDOWS\system32\conhost.exe. Strip the prefix so the result is a
+        // path the rest of the codebase recognises.
+        var trimmed = commandLine.TrimStart();
+        if (trimmed.StartsWith(@"\??\", StringComparison.Ordinal))
+            trimmed = trimmed[4..];
+
+        return ScanTargeting.ExtractImagePath(trimmed, File.Exists) ?? "";
     }
 
     /// <summary>

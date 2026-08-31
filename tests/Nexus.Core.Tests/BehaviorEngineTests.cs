@@ -210,6 +210,82 @@ public class BehaviorEngineTests
         Assert.DoesNotContain("beh-masquerade", CodesFor(Launch("", "conhost.exe 0x4")));
     }
 
+    /// <summary>
+    /// The same bug, a second time. Switching to ETW reintroduced it: ETW carries the
+    /// image *name* and no directory, so "conhost.exe" arrived where a path was
+    /// expected. It is not empty, so the emptiness check let it through, and
+    /// "conhost.exe" is certainly not under System32 — so a Windows system process was
+    /// reported as masquerading again, with a blank directory in the message, on the
+    /// very first run after the change.
+    ///
+    /// A bare file name is not a path. The rule now requires a rooted one.
+    /// </summary>
+    [Fact]
+    public void A_bare_file_name_is_not_treated_as_a_path()
+    {
+        var evt = new ProcessStartEvent
+        {
+            Pid = 1000,
+            ParentPid = 900,
+            ImageFileName = "conhost.exe",
+            ImagePath = "conhost.exe",
+            CommandLine = @"\??\C:\WINDOWS\system32\conhost.exe 0x4",
+            At = Now,
+        };
+
+        var finding = new BehaviorEngine().Observe(evt);
+
+        Assert.DoesNotContain("beh-masquerade", finding?.Signals.Select(s => s.Code) ?? []);
+    }
+
+    /// <summary>
+    /// Losing the path must not cost the name. Every rule that matches on the image
+    /// name — the masquerade lookup, the LOLBin catalogue — would silently stop
+    /// working, which is a worse failure than the false positive it replaced, because
+    /// nothing would appear in any log to say so.
+    /// </summary>
+    [Fact]
+    public void A_supplied_name_is_used_when_there_is_no_path()
+    {
+        var evt = new ProcessStartEvent
+        {
+            Pid = 1000,
+            ParentPid = 900,
+            ImageFileName = "powershell.exe",
+            ImagePath = "",
+            CommandLine = "powershell -w hidden -Command Start-Thing",
+            At = Now,
+        };
+
+        Assert.Equal("powershell.exe", evt.ImageName);
+
+        var finding = new BehaviorEngine().Observe(evt);
+
+        Assert.NotNull(finding);
+        Assert.Contains("beh-lolbin-powershell-hidden", finding.Signals.Select(s => s.Code));
+    }
+
+    /// <summary>A genuine masquerade — a real path in the wrong place — must still be
+    /// caught. The fix narrows the rule; it does not switch it off.</summary>
+    [Fact]
+    public void A_system_binary_running_from_a_real_wrong_directory_is_still_reported()
+    {
+        var evt = new ProcessStartEvent
+        {
+            Pid = 1000,
+            ParentPid = 900,
+            ImageFileName = "svchost.exe",
+            ImagePath = @"C:\Users\me\AppData\Local\Temp\svchost.exe",
+            CommandLine = @"C:\Users\me\AppData\Local\Temp\svchost.exe -k netsvcs",
+            At = Now,
+        };
+
+        var finding = new BehaviorEngine().Observe(evt);
+
+        Assert.NotNull(finding);
+        Assert.Contains("beh-masquerade", finding.Signals.Select(s => s.Code));
+    }
+
     /// <summary>Build tools routinely pass thousands of characters; the Windows limit
     /// is 32767 and a 3762-character shell invocation was being reported.</summary>
     [Fact]

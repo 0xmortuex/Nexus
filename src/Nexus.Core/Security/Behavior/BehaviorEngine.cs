@@ -149,13 +149,18 @@ public sealed class BehaviorEngine
         if (!BehaviorCatalog.SystemImageHomes.TryGetValue(evt.ImageName, out var expectedHome))
             return;
 
-        // Nexus cannot always read a process's image path — protected processes and
-        // anything at a higher integrity level refuse. An empty path means "we do not
-        // know", and treating that as "not in System32" turns a permission failure
-        // into Strong evidence of malware. On a real machine this reported conhost.exe
-        // as masquerading, with the directory left blank in the message because there
+        // Nexus cannot always learn a process's image path. Protected processes and
+        // anything at a higher integrity level refuse to give it up, and ETW does not
+        // carry one at all. "We do not know" must never be reported as "not in
+        // System32": that turns a permission failure, or simply a different event
+        // source, into Strong evidence of malware.
+        //
+        // This caught conhost.exe twice. First with an empty path from WMI, then again
+        // through ETW, where the bare file name arrived where a path was expected and
+        // sailed past a check that only looked for emptiness. A bare name is not a
+        // path, and the message printed a blank directory both times because there
         // was never a directory to print.
-        if (evt.ImagePath.Length == 0)
+        if (!PathHelpers.IsRooted(evt.ImagePath))
             return;
 
         // SysWOW64 is the legitimate 32-bit twin of System32.
