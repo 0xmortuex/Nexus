@@ -45,6 +45,19 @@ public sealed class TrustStore
             _byKey[decision.IdentityKey] = decision;
     }
 
+    /// <summary>
+    /// How many files the user has vouched for. Zero means nothing will ever be
+    /// matched against a hash, which lets a scan skip computing one.
+    /// </summary>
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+                return _byKey.Count;
+        }
+    }
+
     public bool IsTrusted(ScanTarget target)
     {
         lock (_gate)

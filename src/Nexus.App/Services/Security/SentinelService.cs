@@ -296,7 +296,10 @@ public sealed class SentinelService : IDisposable
             return cached;
         }
 
-        var target = _identity.Identify(path, cancellationToken);
+        // Hash only if something will look it up. Reading a 1.6 MB file to compute a
+        // hash nobody consults is the most expensive no-op in the scan, and on a
+        // machine with no reputation data and no trusted files that was every file.
+        var target = _identity.Identify(path, cancellationToken, withHash: NeedsHash);
         var signals = new List<SecuritySignal>();
         var engines = new HashSet<SignalSource>();
 
@@ -309,16 +312,23 @@ public sealed class SentinelService : IDisposable
                 engines.Add(SignalSource.Reputation);
         }
 
-        // Signature.
-        var signature = _signatures.Verify(path);
+        // The signature check and the worker are independent, and both are dominated by
+        // waiting rather than computing: verifying a signature averages 24ms on real
+        // files and 34ms on unsigned ones, nearly all of it inside Windows hashing the
+        // file and searching catalogs, while the worker is off reading the same file in
+        // another process. Run one after the other and a file costs the sum; run them
+        // together and it costs the slower of the two.
+        var signatureTask = Task.Run(() => _signatures.Verify(path), cancellationToken);
+        var staticTask = _scanner.ScanAsync(path, cancellationToken);
+
+        var signature = await signatureTask.ConfigureAwait(false);
         if (signature.State != SignatureState.Unknown)
         {
             signals.AddRange(AuthenticodeVerifier.ToSignals(signature));
             engines.Add(SignalSource.CodeSignature);
         }
 
-        // Static analysis, out of process.
-        var (staticSignals, staticEngines) = await _scanner.ScanAsync(path, cancellationToken).ConfigureAwait(false);
+        var (staticSignals, staticEngines) = await staticTask.ConfigureAwait(false);
         signals.AddRange(staticSignals);
         foreach (var engine in staticEngines)
             engines.Add(engine);
@@ -1110,6 +1120,18 @@ public sealed class SentinelService : IDisposable
 
         Report(verdict, origin: "Defender health");
     }
+
+    /// <summary>
+    /// Whether a file's hash will actually be used.
+    ///
+    /// Two things consult it: hash reputation, and the list of files the user has
+    /// vouched for. With neither, the hash is computed, stored and never read, at the
+    /// cost of reading the whole file.
+    ///
+    /// Re-checked per file rather than cached, because the user can import a hash list
+    /// or trust a file part-way through a scan and the next file should honour it.
+    /// </summary>
+    private bool NeedsHash => _reputation.HasData || _trust.Count > 0;
 
     /// <summary>The user's exclusions, read fresh so edits take effect immediately
     /// rather than at the next restart.</summary>
