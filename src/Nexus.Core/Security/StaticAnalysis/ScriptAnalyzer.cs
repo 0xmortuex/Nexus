@@ -7,6 +7,12 @@ public enum ScriptKind
 {
     Unknown,
     PowerShell,
+
+    /// <summary>
+    /// A .psd1 module manifest: a hashtable literal describing what a module exports,
+    /// not code. It names cmdlets rather than calling them.
+    /// </summary>
+    PowerShellData,
     BatchOrCmd,
     VBScript,
     JavaScript,
@@ -44,7 +50,8 @@ public static class ScriptAnalyzer
 
         return extension switch
         {
-            ".ps1" or ".psm1" or ".psd1" => ScriptKind.PowerShell,
+            ".ps1" or ".psm1" => ScriptKind.PowerShell,
+            ".psd1" => ScriptKind.PowerShellData,
             ".bat" or ".cmd" => ScriptKind.BatchOrCmd,
             ".vbs" or ".vbe" or ".wsf" => ScriptKind.VBScript,
             ".js" or ".jse" => ScriptKind.JavaScript,
@@ -73,11 +80,54 @@ public static class ScriptAnalyzer
             return signals;
         }
 
+        if (kind == ScriptKind.PowerShellData)
+        {
+            AddDataFileObservations(text, lower, signals);
+            return signals;
+        }
+
         AddObfuscationSignals(text, lower, signals);
         AddDownloadAndRunSignals(lower, signals);
         AddPersistenceSignals(lower, signals);
 
         return signals;
+    }
+
+    /// <summary>
+    /// Records what the rules noticed in a PowerShell *data* file, without scoring it.
+    ///
+    /// A .psd1 is a module manifest: a hashtable literal that lists what a module
+    /// exports. It names cmdlets, it does not call them, and PowerShell loads it in a
+    /// mode that permits data and nothing else.
+    ///
+    /// This was found on a real machine. Microsoft.PowerShell.Utility.psd1 — which
+    /// ships with Windows and sits in System32 — came out at 25/100 as "downloads
+    /// something from the internet and runs it immediately", because its export list
+    /// contains both Invoke-WebRequest and Invoke-Expression. The rule requires a
+    /// downloader *and* an executor, which is sound for a script and useless for a
+    /// manifest that names both by definition.
+    ///
+    /// The observations are kept and shown, because a manifest is still a file worth
+    /// being able to read about. They are simply worth nothing on their own.
+    /// </summary>
+    private static void AddDataFileObservations(string text, string lower, List<SecuritySignal> signals)
+    {
+        var observations = new List<SecuritySignal>();
+
+        AddObfuscationSignals(text, lower, observations);
+        AddDownloadAndRunSignals(lower, observations);
+        AddPersistenceSignals(lower, observations);
+
+        foreach (var observation in observations)
+        {
+            signals.Add(observation with
+            {
+                Weight = SignalWeight.Informational,
+                Explanation = observation.Explanation +
+                    " (Noted but not counted: this is a module manifest, which lists the commands a " +
+                    "module provides rather than running any of them.)",
+            });
+        }
     }
 
     /// <summary>

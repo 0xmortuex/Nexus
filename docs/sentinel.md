@@ -328,10 +328,15 @@ machine:
 
 | Target | Files | Reported |
 |---|---|---|
-| A Next.js project with `node_modules` | 18,899 | 0 |
-| `C:\Windows\System32` | 6,910 | 0 |
-| Programs running right now | 52 | 0 |
-| A planted PowerShell dropper | 1 | 1, at 63/100 |
+| A Next.js project with `node_modules` | 18,917 | 0 |
+| `C:\Windows\System32` | 6,911 | 0 |
+| Programs running right now | 44 | 0 |
+| A folder of planted droppers, plain and archived | 11 | 10 |
+
+The sweep drives the real `Nexus.Scanner.exe` over the same protocol the product
+uses, so archives, byte patterns and YARA are measured too. Compiling its engines in
+instead would let the tool drift from what actually ships — reporting confidently on
+behaviour the product does not have.
 
 The last row is the control. Without it, "zero findings" only proves the tool has
 been quieted, not that it is right.
