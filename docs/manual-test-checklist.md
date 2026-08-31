@@ -232,9 +232,10 @@ logic; everything below is the part that talks to the OS.
 
 ## 8a. Behaviour monitoring (ETW)
 
-Confirmed working on a real elevated run (the log reports "Behaviour monitoring is
-using ETW"). These steps re-check it after changes, and cover the parts that only
-appear over time -- restart behaviour and session cleanup.
+Confirmed on real elevated runs: the session starts, stops, and restarts on the same
+instance; twelve process events arrived with every path resolved; no findings were
+raised; and `logman query -ets` showed no leaked session afterwards. These steps
+re-check it after changes and cover what only shows up in the running app.
 
 - [ ] With protection on, Security → Protection shows **Behaviour monitoring** as
       "Watching every process launch, including very short-lived ones (ETW)". If it
